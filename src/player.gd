@@ -21,6 +21,11 @@ const BASE_MAX_HP := 100.0
 const BASE_PICKUP_RADIUS := 28.0
 const BASE_LAMP_SCALE := 2.2
 const LANCE_TINT := Color(0.55, 0.95, 1.0)
+const SOLAR_TINT := Color(1.0, 0.72, 0.3)
+const DRONE_TEXTURE := preload("res://assets/sprites/drone.png")
+const DRONE_ORBIT_RADIUS := 34.0
+const DRONE_ORBIT_SPEED := 2.4  # rad/s
+const DRONE_HIT_RANGE := 16.0
 
 var peer_id := 1
 var player_index := 0
@@ -42,6 +47,7 @@ var passives := {}  # id -> level
 var _cooldowns := {}
 var _pending_offers: Array = []  # server-only queue of offers (Array[Array])
 var _pickup_shape: CircleShape2D
+var _drones: Array[Sprite2D] = []
 
 
 func _enter_tree() -> void:
@@ -85,6 +91,14 @@ func _physics_process(delta: float) -> void:
 
 	if velocity.x != 0.0:
 		$Sprite.flip_h = velocity.x < 0.0
+
+	# Drones orbit deterministically on every peer (cosmetic on clients; the
+	# server's copies are the ones that deal damage).
+	if not _drones.is_empty():
+		var t := Time.get_ticks_msec() / 1000.0
+		for i in _drones.size():
+			var angle := t * DRONE_ORBIT_SPEED + TAU * i / _drones.size()
+			_drones[i].position = Vector2.from_angle(angle) * DRONE_ORBIT_RADIUS
 
 	if multiplayer.is_server():
 		if downed:
@@ -151,7 +165,9 @@ func _server_pick(id: String) -> void:
 		return
 	_pending_offers.pop_front()
 	apply_pick.rpc(id)
-	if Weapons.is_weapon(id) and weapons[id] == 1:
+	if id.begins_with("evolve_"):
+		game.announce("%s evolved the %s!" % [display_name(), Weapons.title(id)])
+	elif Weapons.is_weapon(id) and weapons[id] == 1:
 		game.announce("%s armed the %s" % [display_name(), Weapons.title(id)])
 	match id:
 		"rebreather":
@@ -164,11 +180,26 @@ func _server_pick(id: String) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func apply_pick(id: String) -> void:
-	if Weapons.is_weapon(id):
+	if id.begins_with("evolve_"):
+		weapons[id.trim_prefix("evolve_")] = Weapons.EVOLVED_LEVEL
+	elif Weapons.is_weapon(id):
 		weapons[id] = mini(weapons.get(id, 0) + 1, GameRules.WEAPON_MAX_LEVEL)
 	else:
 		passives[id] = mini(passives.get(id, 0) + 1, GameRules.PASSIVE_MAX_LEVEL)
 		_apply_passives()
+	_update_drones()
+
+
+## Keep one orbiting drone sprite per drone level, on every peer.
+func _update_drones() -> void:
+	var want := weapons.get("drone", 0) as int
+	while _drones.size() < want:
+		var drone := Sprite2D.new()
+		drone.texture = DRONE_TEXTURE
+		add_child(drone)
+		_drones.append(drone)
+	while _drones.size() > want:
+		_drones.pop_back().queue_free()
 
 
 ## Recompute derived stats from station meta (permanent) + in-run passives.
@@ -202,7 +233,9 @@ func teleport(pos: Vector2) -> void:
 
 
 func _fire_weapon(id: String) -> bool:
-	var dmg := Weapons.weapon_damage(id, weapons[id])
+	var lvl: int = weapons[id]
+	var evolved := lvl >= Weapons.EVOLVED_LEVEL
+	var dmg := Weapons.weapon_damage(id, lvl)
 	if id == "harpoon":
 		dmg *= 1.0 + Station.HARPOON_PER_LEVEL * int(meta.get("harpoon", 0))
 	var reach: float = Weapons.WEAPONS[id]["range"]
@@ -212,18 +245,49 @@ func _fire_weapon(id: String) -> bool:
 			if target == null:
 				return false
 			var dir := (target.global_position - global_position).normalized()
-			game.fire_bolt(global_position, dir, dmg, 1, Color.WHITE, Vector2.ONE, 260.0)
+			if evolved:  # Chain Harpoon: arcs between prey
+				game.fire_bolt(global_position, dir, dmg, 1, Color(0.6, 1.0, 0.85), Vector2(1.2, 1.2), 300.0, 3)
+			else:
+				game.fire_bolt(global_position, dir, dmg, 1, Color.WHITE, Vector2.ONE, 260.0)
 		"lance":
 			var target := _nearest_enemy(reach)
 			if target == null:
 				return false
 			var dir := (target.global_position - global_position).normalized()
-			game.fire_bolt(global_position, dir, dmg, 99, LANCE_TINT, Vector2(1.9, 1.3), 420.0)
+			if evolved:  # Solar Lance: a spear of burning light
+				game.fire_bolt(global_position, dir, dmg * 2.0, 999, SOLAR_TINT, Vector2(2.5, 1.6), 520.0)
+			else:
+				game.fire_bolt(global_position, dir, dmg, 99, LANCE_TINT, Vector2(1.9, 1.3), 420.0)
 		"charge":
 			var target := _random_enemy(reach)
 			if target == null:
 				return false
-			game.drop_charge(target.global_position, dmg, Weapons.WEAPONS[id]["radius"])
+			var radius: float = Weapons.WEAPONS[id]["radius"]
+			if evolved:  # Pressure Bomb: implodes and stuns
+				game.drop_charge(target.global_position, dmg * 1.8, radius * 1.7, 1.5)
+			else:
+				game.drop_charge(target.global_position, dmg, radius)
+		"drone":
+			# Contact tick: each drone shreds fauna it touches.
+			for drone in _drones:
+				for e in get_tree().get_nodes_in_group("enemies"):
+					var enemy := e as Enemy
+					if not enemy.is_queued_for_deletion() \
+							and drone.global_position.distance_to(enemy.global_position) <= DRONE_HIT_RANGE:
+						enemy.take_damage(dmg)
+		"sonar":
+			var radius := Weapons.sonar_radius(lvl)
+			var any_hit := false
+			for e in get_tree().get_nodes_in_group("enemies"):
+				var enemy := e as Enemy
+				var offset := enemy.global_position - global_position
+				if offset.length() <= radius and not enemy.is_queued_for_deletion():
+					any_hit = true
+					enemy.global_position += offset.normalized() * 28.0
+					enemy.take_damage(dmg)
+			if not any_hit:
+				return false
+			game.spawn_ring(global_position, radius)
 	return true
 
 

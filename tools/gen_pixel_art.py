@@ -260,9 +260,123 @@ MINE = {
     },
 }
 
+# 16x16 lurker: spiny ambusher, sand-colored until it strikes
+LURKER = {
+    "grid": [
+        "................",
+        "....S...S...S...",
+        "....SS.SS..SS...",
+        ".....SSSSSSS....",
+        "..S.SSDDDDSS....",
+        "..SSSDDDDDDSS...",
+        "...SDDRDDDDDSS..",
+        "..SSDDDDDDDDDS..",
+        "...SDDDDDDDDSS..",
+        "..SSSDDDDDDSS...",
+        "..S.SSDDDDSS....",
+        ".....SSSSSSS....",
+        "....SS.SS..SS...",
+        "....S...S...S...",
+        "................",
+        "................",
+    ],
+    "palette": {
+        "S": "#7a6a4a",
+        "D": "#5a4c34",
+        "R": "#d84438",
+    },
+}
+
+# 16x16 jelly bloom: translucent bell with trailing stingers
+JELLY = {
+    "grid": [
+        "................",
+        ".....JJJJJJ.....",
+        "...JJJJJJJJJJ...",
+        "..JJWWJJJJJJJJ..",
+        "..JJWWJJJJJJJJ..",
+        ".JJJJJJJJJJJJJJ.",
+        ".JJJJJJJJJJJJJJ.",
+        ".JPJPJPJPJPJPJP.",
+        "..P.J.P.J.P.J...",
+        "..J.P.J.P.J.P...",
+        "..P...P...P.....",
+        "....J...J...J...",
+        "..P...P...P.....",
+        "....J...J.......",
+        "................",
+        "................",
+    ],
+    "palette": {
+        "J": "#b46ad4aa",
+        "W": "#eed4ffcc",
+        "P": "#8a4aaa88",
+    },
+}
+
+# 24x24 trench maw: huge angler-thing that guards prime salvage
+MAW = {
+    "grid": [
+        "...........G............",
+        "..........GG............",
+        ".........GG.............",
+        "......MMMMMMMMMM........",
+        "....MMMMMMMMMMMMMM......",
+        "...MMMWWMMMMMMMMMMM.....",
+        "..MMMWWWWMMMMMMMMMMM....",
+        ".MMMMWWMMMMMMMMMMMMMM...",
+        ".MMMMMMMMMMMMMMMMMMMMM..",
+        "MMMMKKKKKKKKKKKKKMMMMMM.",
+        "MMMKWKWKWKWKWKWKWKMMMMMM",
+        "MMMMKKKKKKKKKKKKKKMMMMM.",
+        "MMMKWKWKWKWKWKWKWKMMMMM.",
+        "MMMMKKKKKKKKKKKKKMMMMM..",
+        ".MMMMMMMMMMMMMMMMMMMMM..",
+        ".MMMMMMMMMMMMMMMMMMMM...",
+        "..MMMMMMMMMMMMMMMMMM....",
+        "...MMMMMMMMMMMMMMMM.....",
+        "....MMMM..MMMM..MM......",
+        ".....MM....MM............",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+    ],
+    "palette": {
+        "M": "#2e4a42",
+        "W": "#f2e14c",
+        "K": "#101c18",
+        "G": "#8ef7d3",
+    },
+}
+
+# 8x8 drone: little brass helper bot
+DRONE = {
+    "grid": [
+        "...BB...",
+        "..BYYB..",
+        ".BYCCYB.",
+        ".BYCCYB.",
+        "..BYYB..",
+        "...BB...",
+        "..R..R..",
+        "........",
+    ],
+    "palette": {
+        "B": "#8a6508",
+        "Y": "#d9a521",
+        "C": "#9fe8ff",
+        "R": "#b04a1e",
+    },
+}
+
 SPRITES = {
     "diver.png": DIVER,
     "mine.png": MINE,
+    "lurker.png": LURKER,
+    "jelly.png": JELLY,
+    "maw.png": MAW,
+    "drone.png": DRONE,
     "barbfish.png": BARBFISH,
     "brute.png": BRUTE,
     "harpoon.png": HARPOON,
@@ -307,6 +421,21 @@ def gen_light(size: int = 128) -> list[list[tuple[int, int, int, int]]]:
     return px
 
 
+def gen_ring(size: int = 64) -> list[list[tuple[int, int, int, int]]]:
+    """Thin cyan ring for the sonar pulse visual (scaled up at runtime)."""
+    c = (size - 1) / 2.0
+    r_mid = c - 2.0
+    px = []
+    for y in range(size):
+        row = []
+        for x in range(size):
+            d = ((x - c) ** 2 + (y - c) ** 2) ** 0.5
+            a = max(0.0, 1.0 - abs(d - r_mid) / 2.5)
+            row.append((140, 235, 255, int(a * 235)))
+        px.append(row)
+    return px
+
+
 def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
     for name, spec in SPRITES.items():
@@ -316,7 +445,8 @@ def main() -> None:
         )
     write_png(os.path.join(OUT_DIR, "floor.png"), gen_floor())
     write_png(os.path.join(OUT_DIR, "light.png"), gen_light())
-    print(f"Wrote {len(SPRITES) + 2} sprites to {os.path.normpath(OUT_DIR)}")
+    write_png(os.path.join(OUT_DIR, "ring.png"), gen_ring())
+    print(f"Wrote {len(SPRITES) + 3} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":

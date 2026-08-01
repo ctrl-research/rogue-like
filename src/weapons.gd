@@ -25,6 +25,29 @@ const WEAPONS := {
 		"range": 220.0,
 		"radius": 52.0,
 	},
+	"drone": {
+		"title": "DRONE SWARM",
+		"desc": "Orbiting drones shred nearby fauna",
+		"cd": 0.5,
+		"damage": 6.0,
+		"range": 0.0,
+	},
+	"sonar": {
+		"title": "SONAR PULSE",
+		"desc": "Radial shockwave, pushes the swarm back",
+		"cd": 4.0,
+		"damage": 15.0,
+		"range": 0.0,
+	},
+}
+
+## Maxing a weapon while owning its paired passive unlocks an evolution
+## (offered as a special card; the weapon jumps to EVOLVED_LEVEL).
+const EVOLVED_LEVEL := 6
+const EVOLUTIONS := {
+	"harpoon": {"requires": "magnet", "title": "CHAIN HARPOON", "desc": "Bolts arc between prey"},
+	"lance": {"requires": "lamp", "title": "SOLAR LANCE", "desc": "A spear of burning light"},
+	"charge": {"requires": "suit", "title": "PRESSURE BOMB", "desc": "Implodes and stuns the deep"},
 }
 
 const PASSIVES := {
@@ -39,19 +62,30 @@ const REBREATHER_OXYGEN := 25.0
 
 
 static func is_weapon(id: String) -> bool:
-	return WEAPONS.has(id)
+	return WEAPONS.has(id) or id.begins_with("evolve_")
 
 
 static func title(id: String) -> String:
+	if id.begins_with("evolve_"):
+		return EVOLUTIONS[id.trim_prefix("evolve_")].title
 	if WEAPONS.has(id):
 		return WEAPONS[id].title
 	return PASSIVES[id].title
 
 
 static func desc(id: String) -> String:
+	if id.begins_with("evolve_"):
+		return EVOLUTIONS[id.trim_prefix("evolve_")].desc
 	if WEAPONS.has(id):
 		return WEAPONS[id].desc
 	return PASSIVES[id].desc
+
+
+## Display name for an owned weapon at a level (evolved weapons rename).
+static func display_title(id: String, level: int) -> String:
+	if level >= EVOLVED_LEVEL and EVOLUTIONS.has(id):
+		return EVOLUTIONS[id].title
+	return WEAPONS[id].title
 
 
 static func weapon_damage(id: String, level: int) -> float:
@@ -59,4 +93,8 @@ static func weapon_damage(id: String, level: int) -> float:
 
 
 static func weapon_cd(id: String, level: int) -> float:
-	return WEAPONS[id].cd * pow(0.93, level - 1)
+	return WEAPONS[id].cd * pow(0.93, mini(level, 5) - 1)
+
+
+static func sonar_radius(level: int) -> float:
+	return 85.0 + 12.0 * (mini(level, 5) - 1)
