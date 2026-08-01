@@ -16,6 +16,10 @@ var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
+	# Keep the sim's banked salvage out of the developer's real save.
+	Station._save_path = "user://station_sim.json"
+	Station.bank = 0
+	Station.levels = {}
 	_rng.randomize()
 	_game = GAME_SCENE.instantiate()
 	add_child(_game)
@@ -37,10 +41,31 @@ func _process(delta: float) -> void:
 	if _steer_cd <= 0.0:
 		_steer_cd = 0.2
 		_steer()
+	# The bot is a poor crate courier, so after a grace period the harness
+	# collects crates server-side (one per tick) to deterministically reach
+	# the bell -> descend -> extract loop.
+	if multiplayer.is_server() and _game.crates_left > 0 and _game.elapsed > 20.0 * _game.depth:
+		for c in get_tree().get_nodes_in_group("crates"):
+			if not c.is_queued_for_deletion():
+				_game.on_crate_collected()
+				c.queue_free()
+				break
+
+	# Exercise both bell outcomes: descend once, extract from depth 2.
+	if _game.awaiting_choice and multiplayer.is_server():
+		if _game.depth == 1:
+			print("[sim] bell secured -> descending")
+			_game.choose_descend()
+		else:
+			print("[sim] bell secured -> extracting with %d salvage (bank=%d)" % [
+				_game.salvage_earned, Station.bank])
+			_game.choose_extract()
 
 
 ## Kite like a (mediocre) player: flee nearby enemies, drift toward gems,
-## otherwise wander. Enough to survive and level so picks get exercised.
+## work the objective (crates, then the bell), otherwise wander. Enough to
+## survive, level, and sometimes complete sites so the descend/extract flow
+## gets exercised.
 func _steer() -> void:
 	var pos := _player.global_position
 	var dir := Vector2.ZERO
@@ -50,6 +75,14 @@ func _steer() -> void:
 	var gem := _nearest_in_group("gems", pos, 180.0)
 	if gem != null:
 		dir += (gem.global_position - pos).normalized()
+	var obj_group: String = "crates" if _game.crates_left > 0 else "bell"
+	var objective := _nearest_in_group(obj_group, pos, INF)
+	if objective != null:
+		var weight := 0.8
+		if obj_group == "bell" and pos.distance_to(objective.global_position) < 60.0:
+			dir = Vector2.ZERO  # commit: hold the bell even under fire
+			weight = 2.5
+		dir += (objective.global_position - pos).normalized() * weight
 	if dir.length() < 0.2:
 		dir = Vector2.from_angle(_rng.randf() * TAU)
 	# Steer away from arena edges so fleeing doesn't pin the bot in a corner.

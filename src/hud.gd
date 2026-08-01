@@ -14,6 +14,10 @@ var _level_label: Label
 var _toast: Label
 var _extract_label: Label
 var _gear_label: Label
+var _depth_label: Label
+var _choice_box: VBoxContainer
+var _choice_countdown: Label
+var _extract_btn: Button
 var _offer_box: VBoxContainer
 var _offer_row: HBoxContainer
 var _downed_dim: ColorRect
@@ -48,11 +52,21 @@ func _process(_delta: float) -> void:
 	_o2_label.modulate = Color(1.0, 0.35, 0.3) if o2 < 30.0 else Color(0.62, 0.9, 1.0)
 	_time_label.text = "T %d:%02d" % [int(_game.elapsed) / 60, int(_game.elapsed) % 60]
 	_salvage_label.text = "SALVAGE %d/%d" % [GameRules.CRATE_COUNT - _game.crates_left, GameRules.CRATE_COUNT]
+	_depth_label.text = "DEPTH %d   HAUL %d" % [_game.depth, _game.salvage_earned]
 	_xp_bar.max_value = _game.xp_needed
 	_xp_bar.value = _game.team_xp
 	_level_label.text = "LV %d" % _game.team_level
 
-	if _game.extraction_progress > 0.0 and not _game.game_over:
+	var deciding: bool = _game.awaiting_choice and not _game.game_over
+	_choice_box.visible = deciding and multiplayer.is_server()
+	if _choice_box.visible:
+		_extract_btn.text = "EXTRACT — BANK %d" % _game.salvage_earned
+		_choice_countdown.text = "auto-extract in %ds" % ceili(maxf(0.0, _game.decision_left))
+
+	if deciding and not multiplayer.is_server():
+		_extract_label.visible = true
+		_extract_label.text = "LEAD DIVER IS DECIDING... %ds" % ceili(maxf(0.0, _game.decision_left))
+	elif _game.extraction_progress > 0.0 and not _game.game_over and not deciding:
 		_extract_label.visible = true
 		_extract_label.text = "EXTRACTING... %.1fs" % maxf(0.0, GameRules.EXTRACTION_TIME - _game.extraction_progress)
 	else:
@@ -62,7 +76,10 @@ func _process(_delta: float) -> void:
 		_over_root.visible = true
 		_over_title.text = "DIVE COMPLETE" if _game.victory else "LOST TO THE DEEP"
 		_over_title.modulate = Color(0.55, 1.0, 0.75) if _game.victory else Color(1.0, 0.4, 0.35)
-		_over_sub.text = "The crew extracted with the salvage." if _game.victory else "The trench keeps what it takes."
+		if _game.victory:
+			_over_sub.text = "Banked %d salvage from depth %d." % [_game.banked_salvage, _game.depth]
+		else:
+			_over_sub.text = "The trench keeps what it takes — %d salvage lost at depth %d." % [_game.salvage_earned, _game.depth]
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -169,6 +186,12 @@ func _build() -> void:
 	_salvage_label.modulate = Color(0.95, 0.85, 0.4)
 	root.add_child(_salvage_label)
 
+	_depth_label = _label("DEPTH 1   HAUL 0", 8)
+	_depth_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_depth_label.position = Vector2(-104, 22)
+	_depth_label.modulate = Color(0.62, 0.9, 1.0)
+	root.add_child(_depth_label)
+
 	_xp_bar = ProgressBar.new()
 	_xp_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_xp_bar.offset_left = 8
@@ -232,6 +255,32 @@ func _build() -> void:
 	_offer_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_offer_row.add_theme_constant_override("separation", 8)
 	_offer_box.add_child(_offer_row)
+
+	_choice_box = VBoxContainer.new()
+	_choice_box.set_anchors_preset(Control.PRESET_CENTER)
+	_choice_box.position = Vector2(-90, -30)
+	_choice_box.custom_minimum_size = Vector2(180, 0)
+	_choice_box.add_theme_constant_override("separation", 6)
+	_choice_box.visible = false
+	add_child(_choice_box)
+	var choice_title := _label("BELL SECURED — YOUR CALL", 10)
+	choice_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	choice_title.modulate = Color(0.95, 0.85, 0.4)
+	_choice_box.add_child(choice_title)
+	_extract_btn = Button.new()
+	_extract_btn.text = "EXTRACT"
+	_extract_btn.add_theme_font_size_override("font_size", 9)
+	_extract_btn.pressed.connect(func() -> void: _game.choose_extract())
+	_choice_box.add_child(_extract_btn)
+	var descend_btn := Button.new()
+	descend_btn.text = "DESCEND — DEEPER, RICHER (+O2)"
+	descend_btn.add_theme_font_size_override("font_size", 9)
+	descend_btn.pressed.connect(func() -> void: _game.choose_descend())
+	_choice_box.add_child(descend_btn)
+	_choice_countdown = _label("", 8)
+	_choice_countdown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_choice_countdown.modulate = Color(0.7, 0.8, 0.86)
+	_choice_box.add_child(_choice_countdown)
 
 	_over_root = Control.new()
 	_over_root.set_anchors_preset(Control.PRESET_FULL_RECT)

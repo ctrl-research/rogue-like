@@ -22,12 +22,19 @@ var team_xp := 0
 var xp_needed := GameRules.xp_needed(1)
 var elapsed := 0.0
 var extraction_progress := 0.0
+var depth := 1
+var salvage_earned := 0
+var awaiting_choice := false  # bell reached; host is picking extract/descend
+var decision_left := 0.0
 var game_over := false
 var victory := false
+var banked_salvage := 0  # set on game over (win)
 
 # Server-only state.
 var _started := false
 var _ready_peers := {}
+var _metas := {}  # pid -> station meta dict (from the ready handshake)
+var _max_oxygen := GameRules.OXYGEN_TIME
 var _spawn_accum := 0.0
 var _hud_accum := 0.0
 var _bell: Area2D
@@ -47,9 +54,9 @@ func _ready() -> void:
 	_build_walls()
 	if multiplayer.is_server():
 		multiplayer.peer_disconnected.connect(_on_peer_left)
-		_mark_ready(1)
+		_mark_ready(1, Station.meta_dict())
 	else:
-		_rpc_notify_ready.rpc_id(1)
+		_rpc_notify_ready.rpc_id(1, Station.meta_dict())
 
 
 func _process(delta: float) -> void:
@@ -62,13 +69,19 @@ func _process(delta: float) -> void:
 		for p in _active_players():
 			p.take_damage(GameRules.SUFFOCATION_DPS * delta)
 
-	_spawn_waves(delta)
-	_check_extraction(delta)
+	if awaiting_choice:
+		decision_left -= delta
+		if decision_left <= 0.0:
+			choose_extract()
+	else:
+		_spawn_waves(delta)
+		_check_extraction(delta)
 
 	_hud_accum += delta
 	if _hud_accum >= HUD_SYNC_INTERVAL:
 		_hud_accum = 0.0
-		_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed, extraction_progress)
+		_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed,
+				extraction_progress, depth, salvage_earned, awaiting_choice, decision_left)
 
 
 # --- Server API called by gameplay nodes ---------------------------------
@@ -119,8 +132,9 @@ func add_xp(amount: int) -> void:
 
 func on_crate_collected() -> void:
 	crates_left -= 1
+	salvage_earned += GameRules.crate_value(depth)
 	if crates_left > 0:
-		_rpc_toast.rpc("Salvage secured — %d left" % crates_left)
+		_rpc_toast.rpc("Salvage secured (+%d) — %d left" % [GameRules.crate_value(depth), crates_left])
 	else:
 		_spawn_loot_deferred.call_deferred("bell", GameRules.ARENA_SIZE / 2.0)
 		_rpc_toast.rpc("All salvage secured! The dive bell has dropped — get to it!")
@@ -157,6 +171,7 @@ func _spawn_player(data: Variant) -> Node:
 	node.peer_id = data.pid
 	node.player_index = data.index
 	node.position = data.pos
+	node.meta = data.get("meta", {})
 	node.game = self
 	return node
 
@@ -205,13 +220,14 @@ func _spawn_projectile(data: Variant) -> Node:
 
 
 @rpc("any_peer", "reliable")
-func _rpc_notify_ready() -> void:
+func _rpc_notify_ready(meta: Dictionary) -> void:
 	if multiplayer.is_server():
-		_mark_ready(multiplayer.get_remote_sender_id())
+		_mark_ready(multiplayer.get_remote_sender_id(), meta)
 
 
-func _mark_ready(pid: int) -> void:
+func _mark_ready(pid: int, meta: Dictionary) -> void:
 	_ready_peers[pid] = true
+	_metas[pid] = meta
 	if _started:
 		return
 	var expected: Array[int] = [1]
@@ -226,14 +242,27 @@ func _mark_ready(pid: int) -> void:
 
 func _start_run(pids: Array[int]) -> void:
 	_rng.randomize()
-	var center := GameRules.ARENA_SIZE / 2.0
-	var offsets: Array[Vector2] = [
-		Vector2(-16, -16), Vector2(16, -16), Vector2(-16, 16), Vector2(16, 16),
-	]
+	# Everyone's O2 Reserve upgrades pool into the shared tank.
+	var o2_bonus := 0.0
+	for pid in pids:
+		o2_bonus += Station.O2_PER_LEVEL * int(_metas.get(pid, {}).get("o2", 0))
+	_max_oxygen = GameRules.OXYGEN_TIME + o2_bonus
+	oxygen = _max_oxygen
+
+	var offsets := _spawn_offsets()
 	for i in pids.size():
-		$PlayerSpawner.spawn({"pid": pids[i], "index": i, "pos": center + offsets[i % offsets.size()]})
+		$PlayerSpawner.spawn({
+			"pid": pids[i],
+			"index": i,
+			"pos": GameRules.ARENA_SIZE / 2.0 + offsets[i % offsets.size()],
+			"meta": _metas.get(pids[i], {}),
+		})
 	_place_crates()
 	_rpc_toast.rpc("Recover %d salvage crates, then reach the dive bell. Watch your O2." % GameRules.CRATE_COUNT)
+
+
+func _spawn_offsets() -> Array[Vector2]:
+	return [Vector2(-16, -16), Vector2(16, -16), Vector2(-16, 16), Vector2(16, 16)]
 
 
 func _place_crates() -> void:
@@ -250,7 +279,7 @@ func _place_crates() -> void:
 
 func _spawn_waves(delta: float) -> void:
 	_spawn_accum += delta
-	var interval := clampf(1.8 - elapsed * 0.008, 0.4, 1.8)
+	var interval := clampf(1.8 - elapsed * 0.008, 0.4, 1.8) * GameRules.depth_interval_scale(depth)
 	if _spawn_accum < interval or enemies.get_child_count() >= GameRules.ENEMY_CAP:
 		return
 	_spawn_accum = 0.0
@@ -259,8 +288,8 @@ func _spawn_waves(delta: float) -> void:
 	if alive.is_empty():
 		return
 	var count := 1 + int(elapsed / 45.0) + (Net.player_count() - 1)
-	var hp_scale := 1.0 + 0.35 * (Net.player_count() - 1)
-	var brute_chance := minf(0.35, elapsed / 600.0)
+	var hp_scale := (1.0 + 0.35 * (Net.player_count() - 1)) * GameRules.depth_hp_scale(depth)
+	var brute_chance := minf(0.35, elapsed / 600.0) + GameRules.depth_brute_bonus(depth)
 	for i in count:
 		if enemies.get_child_count() >= GameRules.ENEMY_CAP:
 			break
@@ -288,9 +317,49 @@ func _check_extraction(delta: float) -> void:
 	if all_in:
 		extraction_progress += delta
 		if extraction_progress >= GameRules.EXTRACTION_TIME:
-			_finish(true)
+			awaiting_choice = true
+			decision_left = GameRules.DECISION_TIME
+			_rpc_toast.rpc("Dive bell secured — the lead diver is deciding...")
 	else:
 		extraction_progress = 0.0
+
+
+## Server (host UI): bank the haul and end the run.
+func choose_extract() -> void:
+	if not multiplayer.is_server() or game_over:
+		return
+	awaiting_choice = false
+	_finish(true)
+
+
+## Server (host UI): push deeper — reset the site, harder and richer.
+func choose_descend() -> void:
+	if not multiplayer.is_server() or game_over or not awaiting_choice:
+		return
+	awaiting_choice = false
+	depth += 1
+	oxygen = minf(oxygen + GameRules.DESCEND_O2_BONUS, _max_oxygen)
+	crates_left = GameRules.CRATE_COUNT
+	extraction_progress = 0.0
+	_bell = null
+	for holder: Node2D in [enemies, loot, projectiles]:
+		for child in holder.get_children():
+			child.queue_free()
+	var offsets := _spawn_offsets()
+	var i := 0
+	for p in players.get_children():
+		if not p is Player or p.is_queued_for_deletion():
+			continue
+		var diver := p as Player
+		if diver.downed:
+			# The pressure drop snaps them back on their feet.
+			diver.downed = false
+			diver.revive_progress = 0.0
+			diver.hp = diver.max_hp * GameRules.BLEED_FRACTION
+		diver.teleport.rpc(GameRules.ARENA_SIZE / 2.0 + offsets[i % offsets.size()])
+		i += 1
+	_place_crates.call_deferred()
+	_rpc_toast.rpc("Descending... depth %d. The trench grows hungrier." % depth)
 
 
 func _offer_upgrades() -> void:
@@ -322,8 +391,9 @@ func _roll_offer(p: Player) -> Array:
 
 
 func _finish(win: bool) -> void:
-	_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed, extraction_progress)
-	_rpc_game_over.rpc(win)
+	_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed,
+			extraction_progress, depth, salvage_earned, awaiting_choice, decision_left)
+	_rpc_game_over.rpc(win, salvage_earned if win else 0)
 	for e in enemies.get_children():
 		e.queue_free()
 
@@ -377,7 +447,8 @@ func _build_walls() -> void:
 
 
 @rpc("authority", "unreliable_ordered")
-func _rpc_hud(o: float, c: int, lvl: int, xp: int, need: int, t: float, ext: float) -> void:
+func _rpc_hud(o: float, c: int, lvl: int, xp: int, need: int, t: float, ext: float,
+		d: int, salvage: int, awaiting: bool, decision: float) -> void:
 	oxygen = o
 	crates_left = c
 	team_level = lvl
@@ -385,6 +456,10 @@ func _rpc_hud(o: float, c: int, lvl: int, xp: int, need: int, t: float, ext: flo
 	xp_needed = need
 	elapsed = t
 	extraction_progress = ext
+	depth = d
+	salvage_earned = salvage
+	awaiting_choice = awaiting
+	decision_left = decision
 
 
 @rpc("authority", "call_local", "reliable")
@@ -393,6 +468,11 @@ func _rpc_toast(text: String) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func _rpc_game_over(win: bool) -> void:
+func _rpc_game_over(win: bool, banked: int) -> void:
 	game_over = true
 	victory = win
+	banked_salvage = banked
+	awaiting_choice = false
+	if win:
+		# Every diver banks the full team haul into their own station.
+		Station.bank_salvage(banked)

@@ -60,6 +60,11 @@ jobs:
       - name: Import project
         run: ./godot --headless --path . --import 2>&1 | tee -a build.log
 
+      - name: Station meta-progression unit test
+        run: |
+          set -euo pipefail
+          ./godot --headless --path . tests/station_test.tscn 2>&1 | tee -a build.log | grep -q "STATION_TEST_OK"
+
       # Self-playing solo run (random movement, auto-picked upgrades) so CI
       # exercises real gameplay paths, not just script compilation.
       - name: Headless gameplay smoke test

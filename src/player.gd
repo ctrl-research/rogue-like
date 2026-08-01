@@ -24,6 +24,7 @@ const LANCE_TINT := Color(0.55, 0.95, 1.0)
 
 var peer_id := 1
 var player_index := 0
+var meta := {}  # station upgrade levels, set via spawn data on every peer
 var game  # the Game node; untyped to avoid a class_name dependency cycle
 
 var move_speed := BASE_SPEED
@@ -63,6 +64,8 @@ func _ready() -> void:
 	_pickup_shape = CircleShape2D.new()
 	_pickup_shape.radius = BASE_PICKUP_RADIUS
 	$Pickup/Shape.shape = _pickup_shape
+	_apply_passives()
+	hp = max_hp
 	if multiplayer.is_server():
 		$Pickup.area_entered.connect(_on_pickup)
 
@@ -168,9 +171,12 @@ func apply_pick(id: String) -> void:
 		_apply_passives()
 
 
+## Recompute derived stats from station meta (permanent) + in-run passives.
 func _apply_passives() -> void:
-	move_speed = BASE_SPEED * pow(1.10, passives.get("fins", 0))
-	max_hp = BASE_MAX_HP + 20.0 * passives.get("suit", 0)
+	var meta_speed := 1.0 + Station.FINS_PER_LEVEL * int(meta.get("fins", 0))
+	move_speed = BASE_SPEED * meta_speed * pow(1.10, passives.get("fins", 0))
+	max_hp = BASE_MAX_HP + Station.HULL_PER_LEVEL * int(meta.get("hull", 0)) \
+			+ 20.0 * passives.get("suit", 0)
 	$Lamp.texture_scale = BASE_LAMP_SCALE * pow(1.25, passives.get("lamp", 0))
 	_pickup_shape.radius = BASE_PICKUP_RADIUS * pow(1.4, passives.get("magnet", 0))
 
@@ -187,8 +193,18 @@ func _server_combat(delta: float) -> void:
 			_cooldowns[id] = Weapons.weapon_cd(id, weapons[id])
 
 
+## Server-teleport that survives client-authoritative movement: runs on every
+## peer (including the owner, whose copy is the one that syncs onward).
+@rpc("authority", "call_local", "reliable")
+func teleport(pos: Vector2) -> void:
+	global_position = pos
+	velocity = Vector2.ZERO
+
+
 func _fire_weapon(id: String) -> bool:
 	var dmg := Weapons.weapon_damage(id, weapons[id])
+	if id == "harpoon":
+		dmg *= 1.0 + Station.HARPOON_PER_LEVEL * int(meta.get("harpoon", 0))
 	var reach: float = Weapons.WEAPONS[id]["range"]
 	match id:
 		"harpoon":

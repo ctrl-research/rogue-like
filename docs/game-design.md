@@ -95,12 +95,47 @@ Milestone 0 ships Barbfish + Angler brute only.
 
 ## Milestones
 
-- **M0 (this PR)** — playable prototype: menu (solo/host/join), one arena,
-  2 enemy types, harpoon auto-fire, XP + random level-up boosts, salvage-crate
-  objective, dive-bell extraction, oxygen timer, HUD, win/lose. CI → Pages.
-- **M1** — level-up choice UI (pick 1 of 3), 2 more weapons + passives,
-  downed/revive, enemy scaling by player count polish.
-- **M2** — browser multiplayer (WebRTC signaling), lobby UI, player names.
-- **M3** — descend-or-extract chain (multi-site dives), depth scaling,
-  banked salvage + station upgrades (meta-progression).
-- **M4** — procedural wreck layouts, Lurker/Jelly/boss, sound, real art pass.
+- **M0 — done (PR #1)** — playable prototype: menu (solo/host/join), one
+  arena, 2 enemy types, harpoon auto-fire, XP + random level-up boosts,
+  salvage-crate objective, dive-bell extraction, oxygen timer, HUD,
+  win/lose. CI → Pages.
+- **M1 — done (PR #2)** — level-up choice UI (pick 1 of 3), arc lance +
+  depth charge + passives, downed/bleed-out/revive, self-playing CI bot.
+- **M2 — done (PR #3)** — browser multiplayer: WebRTC room codes + invite
+  links, signaling broker (vendored + fixed), two-instance e2e test in CI.
+  *Remaining infra: deploy the broker to the team k8s cluster behind
+  `wss://` and set `network/signaling/url` (game code is ready).*
+- **M3 — this PR** — descend-or-extract chain, depth scaling, salvage as
+  currency, persistent station upgrades (O2 reserve / hull plating /
+  harpoon mk / dive fins).
+
+## Backlog (post-M3)
+
+### Content pass
+
+- **Enemies**: Lurker (camouflaged ambusher), Jelly bloom (slow area denial,
+  splits on death), Trench maw mini-boss on a depth timer guarding prime
+  salvage.
+- **Weapons**: drone swarm (orbiting pets), sonar pulse (radial knockback
+  wave); weapon **evolutions** — a maxed weapon + its matching passive
+  combine into an evolved form (e.g. harpoon + magnet → chain harpoon).
+- **Characters**: unlockable divers with distinct starting kits (bought with
+  salvage at the station).
+- **Procedural wreck layouts**: walls/rooms/corridors instead of an open
+  arena; light matters more in tight spaces.
+
+### Feel/polish pass
+
+- Hit flashes and knockback on enemies, death poofs, damage numbers.
+- Screen shake (depth charge, going down, extraction).
+- Sound: ambient pressure drone, sonar pings, weapon/impact SFX, muffled
+  underwater mix; music that intensifies with depth.
+- Better sprites + animation frames (idle/swim), parallax debris layers,
+  bubble particles, boot splash/title art.
+- Minimap or off-screen objective arrows (crates/bell).
+
+### Infra
+
+- Deploy signaling broker to the team k8s cluster (`wss://`), set
+  `ALLOWED_ORIGINS` and `network/signaling/url`.
+- TURN server if strict-NAT players report connection failures.
