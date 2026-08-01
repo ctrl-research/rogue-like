@@ -20,6 +20,26 @@ const REVIVE_RANGE := 32.0
 const BLEED_FRACTION := 0.4  # of max hp; the downed bleed-out pool
 const BLEED_TIME := 45.0  # seconds until a downed diver bleeds out
 
+const DECISION_TIME := 12.0  # seconds the host has to pick extract/descend
+const DESCEND_O2_BONUS := 90.0  # partial tank top-up per descent
+const CRATE_SALVAGE_BASE := 5  # salvage per crate, multiplied by depth
+
 
 static func xp_needed(level: int) -> int:
 	return 4 + level * 3
+
+
+static func crate_value(depth: int) -> int:
+	return CRATE_SALVAGE_BASE * depth
+
+
+static func depth_hp_scale(depth: int) -> float:
+	return pow(1.3, depth - 1)
+
+
+static func depth_interval_scale(depth: int) -> float:
+	return pow(0.85, depth - 1)
+
+
+static func depth_brute_bonus(depth: int) -> float:
+	return 0.08 * (depth - 1)

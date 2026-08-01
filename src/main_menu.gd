@@ -14,13 +14,18 @@ var _start_btn: Button
 var _address: LineEdit
 var _code_edit: LineEdit
 var _share_url := ""
+var _station_box: VBoxContainer
+var _bank_label: Label
+var _station_rows: VBoxContainer
 
 
 func _ready() -> void:
 	Net.status_changed.connect(func(text: String) -> void: _status.text = text)
 	Net.player_count_changed.connect(_refresh_lobby)
 	Net.entered_lobby.connect(_on_entered_lobby)
+	Station.changed.connect(_refresh_station)
 	_build()
+	_refresh_station()
 	_try_auto_join_from_url()
 
 
@@ -110,6 +115,26 @@ func _build() -> void:
 		join_lan.pressed.connect(func() -> void: Net.join_lan(_address.text))
 		lan_row.add_child(join_lan)
 
+	_menu_box.add_child(HSeparator.new())
+	var station_toggle := Button.new()
+	station_toggle.text = "STATION UPGRADES"
+	station_toggle.toggle_mode = true
+	station_toggle.toggled.connect(func(on: bool) -> void: _station_box.visible = on)
+	_menu_box.add_child(station_toggle)
+
+	_station_box = VBoxContainer.new()
+	_station_box.add_theme_constant_override("separation", 4)
+	_station_box.visible = false
+	_menu_box.add_child(_station_box)
+	_bank_label = Label.new()
+	_bank_label.add_theme_font_size_override("font_size", 10)
+	_bank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bank_label.modulate = Color(0.95, 0.85, 0.4)
+	_station_box.add_child(_bank_label)
+	_station_rows = VBoxContainer.new()
+	_station_rows.add_theme_constant_override("separation", 2)
+	_station_box.add_child(_station_rows)
+
 	_lobby_box = VBoxContainer.new()
 	_lobby_box.add_theme_constant_override("separation", 6)
 	_lobby_box.visible = false
@@ -154,6 +179,34 @@ func _build() -> void:
 	_status.custom_minimum_size = Vector2(280, 24)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_status)
+
+
+func _refresh_station() -> void:
+	if _station_rows == null:
+		return
+	_bank_label.text = "BANKED SALVAGE: %d" % Station.bank
+	for child in _station_rows.get_children():
+		child.queue_free()
+	for id in Station.UPGRADES:
+		var spec: Dictionary = Station.UPGRADES[id]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var info := Label.new()
+		info.text = "%s Lv%d/%d — %s" % [spec.title, Station.level(id), spec.max, spec.desc]
+		info.add_theme_font_size_override("font_size", 8)
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(info)
+		var buy := Button.new()
+		buy.add_theme_font_size_override("font_size", 8)
+		if Station.level(id) >= int(spec.max):
+			buy.text = "MAX"
+			buy.disabled = true
+		else:
+			buy.text = "BUY %d" % Station.cost(id)
+			buy.disabled = not Station.can_buy(id)
+			buy.pressed.connect(func() -> void: Station.buy(id))
+		row.add_child(buy)
+		_station_rows.add_child(row)
 
 
 func _on_entered_lobby(room: String, is_host: bool) -> void:
