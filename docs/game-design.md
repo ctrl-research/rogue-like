@@ -105,24 +105,23 @@ Milestone 0 ships Barbfish + Angler brute only.
   links, signaling broker (vendored + fixed), two-instance e2e test in CI.
   *Remaining infra: deploy the broker to the team k8s cluster behind
   `wss://` and set `network/signaling/url` (game code is ready).*
-- **M3 — this PR** — descend-or-extract chain, depth scaling, salvage as
-  currency, persistent station upgrades (O2 reserve / hull plating /
+- **M3 — done (PR #4)** — descend-or-extract chain, depth scaling, salvage
+  as currency, persistent station upgrades (O2 reserve / hull plating /
   harpoon mk / dive fins).
+- **M4a — this PR** — content pass: Lurker (camouflaged ambusher), Jelly
+  bloom (splits on death), Trench Maw mini-boss guarding the last crates;
+  drone swarm + sonar pulse weapons; weapon evolutions (Chain Harpoon,
+  Solar Lance, Pressure Bomb) unlocked by maxed weapon + paired passive.
 
-## Backlog (post-M3)
+## Backlog (post-M4a)
 
-### Content pass
+### Content
 
-- **Enemies**: Lurker (camouflaged ambusher), Jelly bloom (slow area denial,
-  splits on death), Trench maw mini-boss on a depth timer guarding prime
-  salvage.
-- **Weapons**: drone swarm (orbiting pets), sonar pulse (radial knockback
-  wave); weapon **evolutions** — a maxed weapon + its matching passive
-  combine into an evolved form (e.g. harpoon + magnet → chain harpoon).
 - **Characters**: unlockable divers with distinct starting kits (bought with
   salvage at the station).
 - **Procedural wreck layouts**: walls/rooms/corridors instead of an open
   arena; light matters more in tight spaces.
+- More evolutions (drone/sonar have none yet) and a second boss variety.
 
 ### Feel/polish pass
 

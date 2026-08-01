@@ -8,6 +8,7 @@ const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 const PROJECTILE_SCENE := preload("res://scenes/projectile.tscn")
 const DEPTH_CHARGE_SCENE := preload("res://scenes/depth_charge.tscn")
 const GEM_SCENE := preload("res://scenes/xp_gem.tscn")
+const RING_SCENE := preload("res://scenes/sonar_ring.tscn")
 const CRATE_SCENE := preload("res://scenes/salvage_crate.tscn")
 const BELL_SCENE := preload("res://scenes/dive_bell.tscn")
 
@@ -38,6 +39,7 @@ var _max_oxygen := GameRules.OXYGEN_TIME
 var _spawn_accum := 0.0
 var _hud_accum := 0.0
 var _bell: Area2D
+var _maw_spawned := false  # one Trench Maw per site
 var _rng := RandomNumberGenerator.new()
 
 @onready var players: Node2D = $Players
@@ -87,7 +89,7 @@ func _process(delta: float) -> void:
 # --- Server API called by gameplay nodes ---------------------------------
 
 
-func fire_bolt(from: Vector2, dir: Vector2, damage: float, pierce: int, tint: Color, sprite_scale: Vector2, speed: float) -> void:
+func fire_bolt(from: Vector2, dir: Vector2, damage: float, pierce: int, tint: Color, sprite_scale: Vector2, speed: float, bounces := 0) -> void:
 	$ProjectileSpawner.spawn({
 		"type": "bolt",
 		"pos": from,
@@ -97,11 +99,19 @@ func fire_bolt(from: Vector2, dir: Vector2, damage: float, pierce: int, tint: Co
 		"tint": tint,
 		"scale": sprite_scale,
 		"speed": speed,
+		"bounces": bounces,
 	})
 
 
-func drop_charge(at: Vector2, damage: float, radius: float) -> void:
-	$ProjectileSpawner.spawn({"type": "charge", "pos": at, "damage": damage, "radius": radius})
+func drop_charge(at: Vector2, damage: float, radius: float, stun := 0.0) -> void:
+	$ProjectileSpawner.spawn({
+		"type": "charge", "pos": at, "damage": damage, "radius": radius, "stun": stun,
+	})
+
+
+## Cosmetic sonar ring, replicated so every peer sees the pulse.
+func spawn_ring(at: Vector2, radius: float) -> void:
+	$ProjectileSpawner.spawn({"type": "ring", "pos": at, "radius": radius})
 
 
 func add_oxygen(seconds: float) -> void:
@@ -114,11 +124,29 @@ func announce(text: String) -> void:
 
 
 func on_enemy_killed(enemy: Enemy) -> void:
-	# Deferred: kills happen inside physics callbacks, and spawning an Area2D
+	# Deferred: kills happen inside physics callbacks, and spawning nodes
 	# there would register collision shapes while the physics server is
 	# flushing queries.
 	_spawn_loot_deferred.call_deferred("gem", enemy.global_position)
+	match enemy.kind:
+		"jelly":
+			# The bloom splits.
+			for offset in [Vector2(-14, 0), Vector2(14, 0)]:
+				_spawn_enemy_deferred.call_deferred("jelly_small", enemy.global_position + offset)
+		"maw":
+			salvage_earned += 10 * depth
+			for i in 4:
+				_spawn_loot_deferred.call_deferred(
+					"gem", enemy.global_position + Vector2.from_angle(TAU * i / 4.0) * 18.0)
+			_rpc_toast.rpc("The Trench Maw is slain! Prime salvage recovered (+%d)." % (10 * depth))
 	enemy.queue_free()
+
+
+func _spawn_enemy_deferred(kind: String, pos: Vector2) -> void:
+	if game_over or enemies.get_child_count() >= GameRules.ENEMY_CAP:
+		return
+	var hp_scale := (1.0 + 0.35 * (Net.player_count() - 1)) * GameRules.depth_hp_scale(depth)
+	$EnemySpawner.spawn({"kind": kind, "pos": pos, "hp_scale": hp_scale})
 
 
 func add_xp(amount: int) -> void:
@@ -133,6 +161,9 @@ func add_xp(amount: int) -> void:
 func on_crate_collected() -> void:
 	crates_left -= 1
 	salvage_earned += GameRules.crate_value(depth)
+	if crates_left == 2 and not _maw_spawned:
+		_maw_spawned = true
+		_spawn_maw.call_deferred()
 	if crates_left > 0:
 		_rpc_toast.rpc("Salvage secured (+%d) — %d left" % [GameRules.crate_value(depth), crates_left])
 	else:
@@ -204,7 +235,13 @@ func _spawn_projectile(data: Variant) -> Node:
 		charge.position = data.pos
 		charge.damage = data.damage
 		charge.radius = data.radius
+		charge.stun = data.get("stun", 0.0)
 		return charge
+	if data.type == "ring":
+		var ring: Node2D = RING_SCENE.instantiate()
+		ring.position = data.pos
+		ring.radius = data.radius
+		return ring
 	var node: Area2D = PROJECTILE_SCENE.instantiate()
 	node.position = data.pos
 	node.dir = data.dir
@@ -213,6 +250,7 @@ func _spawn_projectile(data: Variant) -> Node:
 	node.tint = data.tint
 	node.sprite_scale = data["scale"]
 	node.speed = data.speed
+	node.bounces = data.get("bounces", 0)
 	return node
 
 
@@ -298,8 +336,38 @@ func _spawn_waves(delta: float) -> void:
 		var dist := _rng.randf_range(260.0, 400.0)
 		var pos := anchor.global_position + Vector2.from_angle(angle) * dist
 		pos = pos.clamp(Vector2(24, 24), GameRules.ARENA_SIZE - Vector2(24, 24))
-		var kind := "brute" if _rng.randf() < brute_chance else "barbfish"
-		$EnemySpawner.spawn({"kind": kind, "pos": pos, "hp_scale": hp_scale})
+		$EnemySpawner.spawn({"kind": _roll_kind(brute_chance), "pos": pos, "hp_scale": hp_scale})
+
+
+## Weighted spawn table; the deep gets stranger with time and depth.
+func _roll_kind(brute_chance: float) -> String:
+	var weights := {"barbfish": 1.0, "brute": brute_chance}
+	if elapsed > 60.0 or depth > 1:
+		weights["lurker"] = 0.12 + 0.03 * depth
+	if elapsed > 90.0 or depth > 1:
+		weights["jelly"] = 0.10 + 0.02 * depth
+	var total := 0.0
+	for kind in weights:
+		total += weights[kind]
+	var roll := _rng.randf() * total
+	for kind in weights:
+		roll -= weights[kind]
+		if roll <= 0.0:
+			return kind
+	return "barbfish"
+
+
+## The Maw guards the last of the salvage: spawns near a remaining crate.
+func _spawn_maw() -> void:
+	if game_over:
+		return
+	var crates := get_tree().get_nodes_in_group("crates")
+	var pos := GameRules.ARENA_SIZE / 2.0
+	if not crates.is_empty():
+		pos = (crates[_rng.randi() % crates.size()] as Node2D).global_position + Vector2(30, 0)
+	var hp_scale := (1.0 + 0.35 * (Net.player_count() - 1)) * GameRules.depth_hp_scale(depth)
+	$EnemySpawner.spawn({"kind": "maw", "pos": pos, "hp_scale": hp_scale})
+	_rpc_toast.rpc("Something enormous stirs near the salvage...")
 
 
 func _check_extraction(delta: float) -> void:
@@ -342,6 +410,7 @@ func choose_descend() -> void:
 	crates_left = GameRules.CRATE_COUNT
 	extraction_progress = 0.0
 	_bell = null
+	_maw_spawned = false
 	for holder: Node2D in [enemies, loot, projectiles]:
 		for child in holder.get_children():
 			child.queue_free()
@@ -370,8 +439,15 @@ func _offer_upgrades() -> void:
 
 
 ## Roll up to 3 distinct options for one player: new weapons (if a slot is
-## free), level-ups for owned weapons, and passives below their cap.
+## free), level-ups for owned weapons, and passives below their cap. An
+## available evolution always claims the first slot — it's the jackpot card.
 func _roll_offer(p: Player) -> Array:
+	var options: Array = []
+	for id in p.weapons:
+		if p.weapons[id] == GameRules.WEAPON_MAX_LEVEL and Weapons.EVOLUTIONS.has(id) \
+				and p.passives.get(Weapons.EVOLUTIONS[id].requires, 0) > 0:
+			options.append("evolve_" + id)
+			break
 	var pool: Array = []
 	for id in Weapons.WEAPONS:
 		if p.weapons.has(id):
@@ -382,7 +458,6 @@ func _roll_offer(p: Player) -> Array:
 	for id in Weapons.PASSIVES:
 		if p.passives.get(id, 0) < GameRules.PASSIVE_MAX_LEVEL:
 			pool.append(id)
-	var options: Array = []
 	while options.size() < 3 and not pool.is_empty():
 		var i := _rng.randi() % pool.size()
 		options.append(pool[i])

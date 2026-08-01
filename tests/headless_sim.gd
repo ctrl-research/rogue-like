@@ -12,6 +12,7 @@ var _game: Node2D
 var _player: Player
 var _steer_cd := 0.0
 var _status_cd := 0.0
+var _bell_wait := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -32,10 +33,11 @@ func _process(delta: float) -> void:
 	_status_cd -= delta
 	if _status_cd <= 0.0:
 		_status_cd = 10.0
-		print("[sim] t=%3ds hp=%d/%d downed=%s dead=%s lv=%d xp=%d/%d enemies=%d over=%s" % [
-			int(_game.elapsed), int(_player.hp), int(_player.max_hp), _player.downed,
-			_player.dead, _game.team_level, _game.team_xp, _game.xp_needed,
-			_game.enemies.get_child_count(), _game.game_over,
+		print("[sim] t=%3ds hp=%d/%d lv=%d xp=%d/%d enemies=%d depth=%d crates=%d haul=%d choice=%s over=%s" % [
+			int(_game.elapsed), int(_player.hp), int(_player.max_hp),
+			_game.team_level, _game.team_xp, _game.xp_needed,
+			_game.enemies.get_child_count(), _game.depth, _game.crates_left,
+			_game.salvage_earned, _game.awaiting_choice, _game.game_over,
 		])
 	_steer_cd -= delta
 	if _steer_cd <= 0.0:
@@ -51,9 +53,22 @@ func _process(delta: float) -> void:
 				c.queue_free()
 				break
 
-	# Exercise both bell outcomes: descend once, extract from depth 2.
+	# If the bot can't fight its way onto the bell (the Maw camps it), warp
+	# it there so the descend/extract flow still gets exercised.
+	if multiplayer.is_server() and _game.crates_left == 0 and not _game.awaiting_choice \
+			and not _game.game_over:
+		_bell_wait += delta
+		if _bell_wait > 25.0 and not _player.dead and not _player.downed:
+			var bell := _nearest_in_group("bell", _player.global_position, INF)
+			if bell != null:
+				_player.teleport(bell.global_position)
+	else:
+		_bell_wait = 0.0
+
+	# Exercise both bell outcomes: descend twice (deeper spawn table:
+	# lurkers, jellies, the Maw), then extract from depth 3.
 	if _game.awaiting_choice and multiplayer.is_server():
-		if _game.depth == 1:
+		if _game.depth < 3:
 			print("[sim] bell secured -> descending")
 			_game.choose_descend()
 		else:
@@ -69,17 +84,20 @@ func _process(delta: float) -> void:
 func _steer() -> void:
 	var pos := _player.global_position
 	var dir := Vector2.ZERO
+	var obj_group: String = "crates" if _game.crates_left > 0 else "bell"
+	var objective := _nearest_in_group(obj_group, pos, INF)
 	var threat := _nearest_in_group("enemies", pos, 90.0)
+	# Flee is suppressed near the bell — the Maw guards it, and a bot that
+	# always flees never extracts.
+	var flee_weight := 0.5 if obj_group == "bell" else 1.5
 	if threat != null:
-		dir -= (threat.global_position - pos).normalized() * 1.5
+		dir -= (threat.global_position - pos).normalized() * flee_weight
 	var gem := _nearest_in_group("gems", pos, 180.0)
 	if gem != null:
 		dir += (gem.global_position - pos).normalized()
-	var obj_group: String = "crates" if _game.crates_left > 0 else "bell"
-	var objective := _nearest_in_group(obj_group, pos, INF)
 	if objective != null:
 		var weight := 0.8
-		if obj_group == "bell" and pos.distance_to(objective.global_position) < 60.0:
+		if obj_group == "bell" and pos.distance_to(objective.global_position) < 130.0:
 			dir = Vector2.ZERO  # commit: hold the bell even under fire
 			weight = 2.5
 		dir += (objective.global_position - pos).normalized() * weight
@@ -124,6 +142,10 @@ func _wire_player() -> void:
 		if p is Player and p.peer_id == multiplayer.get_unique_id():
 			_player = p
 			_player.upgrade_offered.connect(_on_offer)
+			# Preload a maxed harpoon + magnet so the evolution card (and the
+			# chain-harpoon behavior) is exercised from the first level-up.
+			_player.weapons["harpoon"] = GameRules.WEAPON_MAX_LEVEL
+			_player.passives["magnet"] = 1
 			return
 
 
@@ -131,6 +153,8 @@ func _on_offer(options: Array) -> void:
 	await get_tree().create_timer(0.3).timeout
 	if not options.is_empty() and is_instance_valid(_player):
 		var pick: String = options[_rng.randi() % options.size()]
+		if str(options[0]).begins_with("evolve_"):
+			pick = options[0]  # always take the jackpot card
 		print("[sim] offered %s -> picked %s (weapons=%s passives=%s)" % [
 			options, pick, _player.weapons, _player.passives,
 		])

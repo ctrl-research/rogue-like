@@ -125,6 +125,8 @@ func _pick(id: String) -> void:
 func _rank_text(id: String) -> String:
 	if _local == null:
 		return ""
+	if id.begins_with("evolve_"):
+		return "EVOLVE!"
 	var lvl: int = _local.weapons.get(id, 0) if Weapons.is_weapon(id) else _local.passives.get(id, 0)
 	if lvl == 0:
 		return "NEW"
@@ -134,7 +136,9 @@ func _rank_text(id: String) -> String:
 func _gear_summary() -> String:
 	var parts := PackedStringArray()
 	for id in _local.weapons:
-		parts.append("%s %d" % [Weapons.title(id).split(" ")[0], _local.weapons[id]])
+		var lvl: int = _local.weapons[id]
+		var name: String = Weapons.display_title(id, lvl).split(" ")[0]
+		parts.append("%s %s" % [name, "EVO" if lvl >= Weapons.EVOLVED_LEVEL else str(lvl)])
 	for id in _local.passives:
 		parts.append("%s %d" % [Weapons.title(id).split(" ")[0].to_lower(), _local.passives[id]])
 	return "  ".join(parts)
