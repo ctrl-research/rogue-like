@@ -1,0 +1,16 @@
+{
+  "name": "rogue-like-signaling",
+  "version": "1.0.0",
+  "description": "WebRTC signaling broker for Abyssal Salvage. Relays connection handshakes only; game traffic stays peer-to-peer.",
+  "license": "MIT",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

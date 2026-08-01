@@ -43,8 +43,14 @@ var _pending_offers: Array = []  # server-only queue of offers (Array[Array])
 var _pickup_shape: CircleShape2D
 
 
-func _ready() -> void:
+func _enter_tree() -> void:
+	# Must happen before _ready: changing a synchronizer's authority during
+	# _ready breaks spawn registration for the scene's other synchronizers
+	# (peer_id is set by the spawn function before the node enters the tree).
 	$MovementSync.set_multiplayer_authority(peer_id)
+
+
+func _ready() -> void:
 	$Camera.enabled = _is_local()
 	$Sprite.self_modulate = TINTS[player_index % TINTS.size()]
 	$NameLabel.text = display_name()

@@ -1,38 +1,95 @@
 extends Node
 ## Session/network manager (autoload "Net").
 ##
-## Solo play uses the default OfflineMultiplayerPeer so the exact same
-## server-authoritative code paths run everywhere — including the web build,
-## where ENet is unavailable. Online co-op (desktop builds) hosts an ENet
-## server; browser co-op will arrive later via WebRTC + signaling (M2).
+## Three transports, one game:
+##  - OFFLINE: solo. Default OfflineMultiplayerPeer, so the same
+##    server-authoritative code paths run everywhere (including web).
+##  - ENET: desktop LAN / direct-IP co-op (host is the server).
+##  - WEBRTC: online co-op via room codes. A signaling broker (signaling/)
+##    brokers the handshake, then traffic is peer-to-peer. The broker gives
+##    the host peer id 1, so multiplayer.is_server() works unchanged. Works
+##    in the browser build.
 
 signal status_changed(text: String)
 signal player_count_changed
+signal entered_lobby(room_code: String, is_host: bool)
+
+enum Mode { OFFLINE, ENET, WEBRTC }
 
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 4
 const GAME_SCENE := "res://scenes/game.tscn"
 const MENU_SCENE := "res://scenes/main_menu.tscn"
 
+var mode := Mode.OFFLINE
 var is_online := false
 var in_game := false
+var room_code := ""
+
+var _signaling := SignalingClient.new()
 
 
 func _ready() -> void:
+	add_child(_signaling)
+	_signaling.lobby_joined.connect(_on_lobby_joined)
+	_signaling.failed.connect(_on_signaling_failed)
 	multiplayer.peer_connected.connect(func(_id: int) -> void: player_count_changed.emit())
-	multiplayer.peer_disconnected.connect(func(_id: int) -> void: player_count_changed.emit())
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
 
+func webrtc_available() -> bool:
+	return SignalingClient.webrtc_available()
+
+
 func start_solo() -> void:
 	_reset_peer()
-	is_online = false
 	_change_to_game()
 
 
-func host_game() -> Error:
+# --- Online (WebRTC room codes) --------------------------------------------
+
+
+func host_online() -> void:
+	_reset_peer()
+	if _signaling.start("") == OK:
+		status_changed.emit("Contacting dive control...")
+
+
+func join_online(code: String) -> void:
+	_reset_peer()
+	if code.strip_edges().is_empty():
+		status_changed.emit("Enter a room code to join.")
+		return
+	if _signaling.start(code) == OK:
+		status_changed.emit("Contacting dive control...")
+
+
+func _on_lobby_joined(_peer_id: int, room: String, is_host: bool) -> void:
+	multiplayer.multiplayer_peer = _signaling.rtc
+	mode = Mode.WEBRTC
+	is_online = true
+	room_code = room
+	if is_host:
+		status_changed.emit("Room %s open — share the code!" % room)
+	else:
+		status_changed.emit("Joined room %s — linking with the crew..." % room)
+	entered_lobby.emit(room, is_host)
+	player_count_changed.emit()
+
+
+func _on_signaling_failed(reason: String) -> void:
+	if mode == Mode.WEBRTC or not is_online:
+		_reset_peer()
+		status_changed.emit(reason)
+
+
+# --- LAN (ENet) -------------------------------------------------------------
+
+
+func host_lan() -> Error:
 	_reset_peer()
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(DEFAULT_PORT, MAX_PLAYERS - 1)
@@ -40,13 +97,15 @@ func host_game() -> Error:
 		status_changed.emit("Failed to host (is port %d already in use?)" % DEFAULT_PORT)
 		return err
 	multiplayer.multiplayer_peer = peer
+	mode = Mode.ENET
 	is_online = true
 	status_changed.emit("Hosting on port %d — waiting for divers..." % DEFAULT_PORT)
+	entered_lobby.emit("", true)
 	player_count_changed.emit()
 	return OK
 
 
-func join_game(address: String) -> Error:
+func join_lan(address: String) -> Error:
 	_reset_peer()
 	if address.strip_edges().is_empty():
 		address = "127.0.0.1"
@@ -56,25 +115,32 @@ func join_game(address: String) -> Error:
 		status_changed.emit("Invalid address: %s" % address)
 		return err
 	multiplayer.multiplayer_peer = peer
+	mode = Mode.ENET
 	is_online = true
 	status_changed.emit("Connecting to %s..." % address)
+	entered_lobby.emit("", false)
 	return OK
+
+
+# --- Shared lifecycle --------------------------------------------------------
 
 
 ## Host only: lock the lobby and move everyone into the game scene.
 func start_dive() -> void:
 	if not multiplayer.is_server():
 		return
-	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
-		multiplayer.multiplayer_peer.refuse_new_connections = true
+	match mode:
+		Mode.ENET:
+			if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
+				multiplayer.multiplayer_peer.refuse_new_connections = true
+		Mode.WEBRTC:
+			_signaling.seal()
 	_rpc_change_to_game.rpc()
 
 
 ## Leave the current session (or game-over screen) and return to the menu.
 func leave() -> void:
 	_reset_peer()
-	is_online = false
-	in_game = false
 	get_tree().change_scene_to_file(MENU_SCENE)
 
 
@@ -93,9 +159,14 @@ func _change_to_game() -> void:
 
 
 func _reset_peer() -> void:
+	_signaling.stop()
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	mode = Mode.OFFLINE
+	is_online = false
+	in_game = false
+	room_code = ""
 
 
 func _on_connected_to_server() -> void:
@@ -105,14 +176,21 @@ func _on_connected_to_server() -> void:
 
 func _on_connection_failed() -> void:
 	_reset_peer()
-	is_online = false
 	status_changed.emit("Connection failed.")
 
 
+func _on_peer_disconnected(id: int) -> void:
+	player_count_changed.emit()
+	# In a WebRTC mesh there is no server_disconnected signal — detect the
+	# host (peer 1) vanishing ourselves.
+	if mode == Mode.WEBRTC and id == 1 and not multiplayer.is_server():
+		_on_server_disconnected()
+
+
 func _on_server_disconnected() -> void:
-	is_online = false
+	var was_in_game := in_game
 	_reset_peer()
-	if in_game:
+	if was_in_game:
 		leave()
 	else:
 		status_changed.emit("Host disconnected.")

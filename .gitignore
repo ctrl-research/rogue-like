@@ -68,3 +68,6 @@ export_credentials.cfg
 *.tmp
 *.temp
 .cache/
+
+# Godot: fetched GDExtension (scripts/fetch_webrtc.sh), not committed
+addons/webrtc/

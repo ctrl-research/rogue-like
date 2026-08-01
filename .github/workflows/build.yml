@@ -49,6 +49,11 @@ jobs:
           mkdir -p "$template_dir"
           mv templates/* "$template_dir/"
 
+      # Desktop WebRTC extension (best-effort): needed by the e2e test below;
+      # the web export has WebRTC built in and never needs it.
+      - name: Fetch WebRTC extension
+        run: bash scripts/fetch_webrtc.sh
+
       # Tee Godot output to build.log so the verify step below can fail the run
       # on parse/autoload errors — a Godot export exits 0 even when scripts fail
       # to compile, so success alone does not mean the project is healthy.
@@ -59,6 +64,17 @@ jobs:
       # exercises real gameplay paths, not just script compilation.
       - name: Headless gameplay smoke test
         run: ./godot --headless --path . --quit-after 12000 tests/headless_sim.tscn 2>&1 | tee -a build.log
+
+      # Real two-instance WebRTC test through the actual signaling broker.
+      # Skips (with a warning) only if the extension download was unavailable.
+      - name: WebRTC end-to-end test
+        run: |
+          set -euo pipefail
+          if [ ! -d addons/webrtc ]; then
+            echo "::warning::webrtc-native unavailable; skipping WebRTC e2e test"
+            exit 0
+          fi
+          GODOT=./godot bash scripts/e2e_webrtc.sh
 
       - name: Export Web build
         run: |
