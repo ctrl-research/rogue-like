@@ -22,6 +22,12 @@ properties/0/replication_mode = 2
 properties/1/path = NodePath(".:dead")
 properties/1/spawn = false
 properties/1/replication_mode = 2
+properties/2/path = NodePath(".:downed")
+properties/2/spawn = false
+properties/2/replication_mode = 2
+properties/3/path = NodePath(".:revive_progress")
+properties/3/spawn = false
+properties/3/replication_mode = 1
 
 [node name="Player" type="CharacterBody2D"]
 collision_layer = 1
@@ -53,6 +59,24 @@ offset_right = 20.0
 offset_bottom = -12.0
 theme_override_font_sizes/font_size = 8
 horizontal_alignment = 1
+
+[node name="Pickup" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 8
+
+[node name="Shape" type="CollisionShape2D" parent="Pickup"]
+
+[node name="ReviveBar" type="ProgressBar" parent="."]
+offset_left = -10.0
+offset_top = -32.0
+offset_right = 10.0
+offset_bottom = -28.0
+max_value = 1.0
+step = 0.01
+value = 0.0
+show_percentage = false
+modulate = Color(0.55, 1, 0.75, 1)
+visible = false
 
 [node name="MovementSync" type="MultiplayerSynchronizer" parent="."]
 replication_config = SubResource("SceneReplicationConfig_move")

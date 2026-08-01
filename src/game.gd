@@ -6,6 +6,7 @@ extends Node2D
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 const PROJECTILE_SCENE := preload("res://scenes/projectile.tscn")
+const DEPTH_CHARGE_SCENE := preload("res://scenes/depth_charge.tscn")
 const GEM_SCENE := preload("res://scenes/xp_gem.tscn")
 const CRATE_SCENE := preload("res://scenes/salvage_crate.tscn")
 const BELL_SCENE := preload("res://scenes/dive_bell.tscn")
@@ -58,7 +59,7 @@ func _process(delta: float) -> void:
 	elapsed += delta
 	oxygen = maxf(0.0, oxygen - delta)
 	if oxygen <= 0.0:
-		for p in _alive_players():
+		for p in _active_players():
 			p.take_damage(GameRules.SUFFOCATION_DPS * delta)
 
 	_spawn_waves(delta)
@@ -73,8 +74,30 @@ func _process(delta: float) -> void:
 # --- Server API called by gameplay nodes ---------------------------------
 
 
-func fire_projectile(from: Vector2, dir: Vector2, damage: float) -> void:
-	$ProjectileSpawner.spawn({"pos": from, "dir": dir, "damage": damage})
+func fire_bolt(from: Vector2, dir: Vector2, damage: float, pierce: int, tint: Color, sprite_scale: Vector2, speed: float) -> void:
+	$ProjectileSpawner.spawn({
+		"type": "bolt",
+		"pos": from,
+		"dir": dir,
+		"damage": damage,
+		"pierce": pierce,
+		"tint": tint,
+		"scale": sprite_scale,
+		"speed": speed,
+	})
+
+
+func drop_charge(at: Vector2, damage: float, radius: float) -> void:
+	$ProjectileSpawner.spawn({"type": "charge", "pos": at, "damage": damage, "radius": radius})
+
+
+func add_oxygen(seconds: float) -> void:
+	oxygen += seconds
+	announce("Rebreather kicked in — +%ds O2" % int(seconds))
+
+
+func announce(text: String) -> void:
+	_rpc_toast.rpc(text)
 
 
 func on_enemy_killed(enemy: Enemy) -> void:
@@ -91,7 +114,7 @@ func add_xp(amount: int) -> void:
 		team_xp -= xp_needed
 		team_level += 1
 		xp_needed = GameRules.xp_needed(team_level)
-		_grant_upgrades()
+		_offer_upgrades()
 
 
 func on_crate_collected() -> void:
@@ -111,11 +134,18 @@ func _spawn_loot_deferred(kind: String, pos: Vector2) -> void:
 		_bell = node as Area2D
 
 
-func on_player_died() -> void:
-	if _alive_players().is_empty():
+func on_player_downed(p: Player) -> void:
+	if _active_players().is_empty():
 		_finish(false)
 	else:
-		_rpc_toast.rpc("A diver went down!")
+		_rpc_toast.rpc("%s is down — get to them!" % p.display_name())
+
+
+func on_player_died() -> void:
+	if _active_players().is_empty():
+		_finish(false)
+	else:
+		_rpc_toast.rpc("A diver was lost to the deep.")
 
 
 # --- Spawn functions (run on every peer when the spawner replicates) ------
@@ -154,10 +184,20 @@ func _spawn_loot(data: Variant) -> Node:
 
 
 func _spawn_projectile(data: Variant) -> Node:
+	if data.type == "charge":
+		var charge: Node2D = DEPTH_CHARGE_SCENE.instantiate()
+		charge.position = data.pos
+		charge.damage = data.damage
+		charge.radius = data.radius
+		return charge
 	var node: Area2D = PROJECTILE_SCENE.instantiate()
 	node.position = data.pos
 	node.dir = data.dir
 	node.damage = data.damage
+	node.pierce = data.pierce
+	node.tint = data.tint
+	node.sprite_scale = data["scale"]
+	node.speed = data.speed
 	return node
 
 
@@ -210,16 +250,16 @@ func _place_crates() -> void:
 
 func _spawn_waves(delta: float) -> void:
 	_spawn_accum += delta
-	var interval := clampf(2.2 - elapsed * 0.012, 0.45, 2.2)
+	var interval := clampf(1.8 - elapsed * 0.008, 0.4, 1.8)
 	if _spawn_accum < interval or enemies.get_child_count() >= GameRules.ENEMY_CAP:
 		return
 	_spawn_accum = 0.0
 
-	var alive := _alive_players()
+	var alive := _active_players()
 	if alive.is_empty():
 		return
-	var count := 1 + int(elapsed / 40.0) + (Net.player_count() - 1)
-	var hp_scale := 1.0 + 0.5 * (Net.player_count() - 1)
+	var count := 1 + int(elapsed / 45.0) + (Net.player_count() - 1)
+	var hp_scale := 1.0 + 0.35 * (Net.player_count() - 1)
 	var brute_chance := minf(0.35, elapsed / 600.0)
 	for i in count:
 		if enemies.get_child_count() >= GameRules.ENEMY_CAP:
@@ -236,7 +276,7 @@ func _spawn_waves(delta: float) -> void:
 func _check_extraction(delta: float) -> void:
 	if _bell == null or not is_instance_valid(_bell):
 		return
-	var alive := _alive_players()
+	var alive := _active_players()
 	if alive.is_empty():
 		return
 	var inside := _bell.get_overlapping_bodies()
@@ -253,13 +293,32 @@ func _check_extraction(delta: float) -> void:
 		extraction_progress = 0.0
 
 
-func _grant_upgrades() -> void:
-	var notes := PackedStringArray()
-	for p in _alive_players():
-		var kind: String = GameRules.UPGRADE_KINDS[_rng.randi() % GameRules.UPGRADE_KINDS.size()]
-		p.apply_upgrade.rpc(kind)
-		notes.append("P%d: %s" % [p.player_index + 1, Player.upgrade_label(kind)])
-	_rpc_toast.rpc("Level %d — %s" % [team_level, ", ".join(notes)])
+func _offer_upgrades() -> void:
+	_rpc_toast.rpc("Level %d — choose your upgrade!" % team_level)
+	for p in players.get_children():
+		if p is Player and not p.dead and not p.is_queued_for_deletion():
+			p.queue_offer(_roll_offer(p))
+
+
+## Roll up to 3 distinct options for one player: new weapons (if a slot is
+## free), level-ups for owned weapons, and passives below their cap.
+func _roll_offer(p: Player) -> Array:
+	var pool: Array = []
+	for id in Weapons.WEAPONS:
+		if p.weapons.has(id):
+			if p.weapons[id] < GameRules.WEAPON_MAX_LEVEL:
+				pool.append(id)
+		elif p.weapons.size() < GameRules.MAX_WEAPONS:
+			pool.append(id)
+	for id in Weapons.PASSIVES:
+		if p.passives.get(id, 0) < GameRules.PASSIVE_MAX_LEVEL:
+			pool.append(id)
+	var options: Array = []
+	while options.size() < 3 and not pool.is_empty():
+		var i := _rng.randi() % pool.size()
+		options.append(pool[i])
+		pool.remove_at(i)
+	return options
 
 
 func _finish(win: bool) -> void:
@@ -279,14 +338,15 @@ func _on_peer_left(pid: int) -> void:
 
 
 func _check_wipe() -> void:
-	if not game_over and _started and _alive_players().is_empty():
+	if not game_over and _started and _active_players().is_empty():
 		_finish(false)
 
 
-func _alive_players() -> Array[Player]:
+## Players who can still act: not dead, not downed.
+func _active_players() -> Array[Player]:
 	var out: Array[Player] = []
 	for p in players.get_children():
-		if p is Player and not p.dead and not p.is_queued_for_deletion():
+		if p is Player and not p.dead and not p.downed and not p.is_queued_for_deletion():
 			out.append(p)
 	return out
 

@@ -3,6 +3,8 @@ extends CanvasLayer
 ## controls are built in code so the scene file stays trivial.
 
 var _game  # the Game node; untyped for dynamic access to its mirrored state
+var _local: Player  # this peer's diver, once spawned
+var _current_offer: Array = []
 var _hp_bar: ProgressBar
 var _o2_label: Label
 var _time_label: Label
@@ -11,6 +13,11 @@ var _xp_bar: ProgressBar
 var _level_label: Label
 var _toast: Label
 var _extract_label: Label
+var _gear_label: Label
+var _offer_box: VBoxContainer
+var _offer_row: HBoxContainer
+var _downed_dim: ColorRect
+var _downed_label: Label
 var _over_root: Control
 var _over_title: Label
 var _over_sub: Label
@@ -22,10 +29,19 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	var local := _local_player()
-	if local != null:
-		_hp_bar.max_value = local.max_hp
-		_hp_bar.value = local.hp
+	if _local == null or not is_instance_valid(_local):
+		_local = _local_player()
+		if _local != null:
+			_local.upgrade_offered.connect(_on_offer)
+
+	if _local != null:
+		_hp_bar.max_value = _local.max_hp
+		_hp_bar.value = _local.hp
+		_gear_label.text = _gear_summary()
+
+	var local_downed: bool = _local != null and _local.downed and not _game.game_over
+	_downed_dim.visible = local_downed
+	_downed_label.visible = local_downed
 
 	var o2: float = _game.oxygen
 	_o2_label.text = "O2 %d:%02d" % [int(o2) / 60, int(o2) % 60]
@@ -47,6 +63,64 @@ func _process(_delta: float) -> void:
 		_over_title.text = "DIVE COMPLETE" if _game.victory else "LOST TO THE DEEP"
 		_over_title.modulate = Color(0.55, 1.0, 0.75) if _game.victory else Color(1.0, 0.4, 0.35)
 		_over_sub.text = "The crew extracted with the salvage." if _game.victory else "The trench keeps what it takes."
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _current_offer.is_empty() or not event is InputEventKey:
+		return
+	var key := event as InputEventKey
+	if not key.pressed or key.echo:
+		return
+	var idx := -1
+	match key.physical_keycode:
+		KEY_1:
+			idx = 0
+		KEY_2:
+			idx = 1
+		KEY_3:
+			idx = 2
+	if idx >= 0 and idx < _current_offer.size():
+		_pick(_current_offer[idx])
+
+
+func _on_offer(options: Array) -> void:
+	_current_offer = options
+	for child in _offer_row.get_children():
+		child.queue_free()
+	for i in options.size():
+		var id: String = options[i]
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(126, 58)
+		btn.add_theme_font_size_override("font_size", 8)
+		btn.text = "[%d] %s\n%s\n%s" % [i + 1, Weapons.title(id), _rank_text(id), Weapons.desc(id)]
+		btn.pressed.connect(func() -> void: _pick(id))
+		_offer_row.add_child(btn)
+	_offer_box.visible = true
+
+
+func _pick(id: String) -> void:
+	_offer_box.visible = false
+	_current_offer = []
+	if _local != null:
+		_local.request_pick(id)
+
+
+func _rank_text(id: String) -> String:
+	if _local == null:
+		return ""
+	var lvl: int = _local.weapons.get(id, 0) if Weapons.is_weapon(id) else _local.passives.get(id, 0)
+	if lvl == 0:
+		return "NEW"
+	return "Lv %d > %d" % [lvl, lvl + 1]
+
+
+func _gear_summary() -> String:
+	var parts := PackedStringArray()
+	for id in _local.weapons:
+		parts.append("%s %d" % [Weapons.title(id).split(" ")[0], _local.weapons[id]])
+	for id in _local.passives:
+		parts.append("%s %d" % [Weapons.title(id).split(" ")[0].to_lower(), _local.passives[id]])
+	return "  ".join(parts)
 
 
 func show_toast(text: String) -> void:
@@ -123,6 +197,41 @@ func _build() -> void:
 	_extract_label.modulate = Color(0.55, 1.0, 0.75)
 	_extract_label.visible = false
 	root.add_child(_extract_label)
+
+	_gear_label = _label("", 8)
+	_gear_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_gear_label.position = Vector2(8, -28)
+	_gear_label.modulate = Color(0.7, 0.82, 0.88)
+	root.add_child(_gear_label)
+
+	_downed_dim = ColorRect.new()
+	_downed_dim.color = Color(0.45, 0.05, 0.05, 0.22)
+	_downed_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_downed_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_downed_dim.visible = false
+	root.add_child(_downed_dim)
+	_downed_label = _label("DOWNED — a teammate can revive you", 12)
+	_downed_label.set_anchors_preset(Control.PRESET_CENTER)
+	_downed_label.position = Vector2(-130, -40)
+	_downed_label.modulate = Color(1.0, 0.5, 0.45)
+	_downed_label.visible = false
+	root.add_child(_downed_label)
+
+	_offer_box = VBoxContainer.new()
+	_offer_box.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_offer_box.offset_top = -104
+	_offer_box.offset_bottom = -26
+	_offer_box.add_theme_constant_override("separation", 4)
+	_offer_box.visible = false
+	add_child(_offer_box)
+	var offer_title := _label("CHOOSE UPGRADE", 9)
+	offer_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	offer_title.modulate = Color(0.95, 0.85, 0.4)
+	_offer_box.add_child(offer_title)
+	_offer_row = HBoxContainer.new()
+	_offer_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_offer_row.add_theme_constant_override("separation", 8)
+	_offer_box.add_child(_offer_row)
 
 	_over_root = Control.new()
 	_over_root.set_anchors_preset(Control.PRESET_FULL_RECT)

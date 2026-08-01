@@ -17,14 +17,14 @@ func setup(kind: String, hp_scale: float) -> void:
 		"brute":
 			$Sprite.texture = preload("res://assets/sprites/brute.png")
 			speed = 26.0
-			hp = 70.0
+			hp = 60.0
 			contact_damage = 18.0
 			xp_value = 3
 		_:  # barbfish
 			$Sprite.texture = preload("res://assets/sprites/barbfish.png")
 			speed = 42.0
-			hp = 20.0
-			contact_damage = 8.0
+			hp = 12.0
+			contact_damage = 6.0
 			xp_value = 1
 	hp *= hp_scale
 
@@ -63,7 +63,7 @@ func _on_damage_tick() -> void:
 	if game == null or game.game_over:
 		return
 	for body in $DamageArea.get_overlapping_bodies():
-		if body is Player and not body.dead:
+		if body is Player and not body.dead and not body.downed:
 			body.take_damage(contact_damage)
 
 
@@ -72,7 +72,7 @@ func _nearest_player() -> Node2D:
 	var best_d := INF
 	for p in game.players.get_children():
 		var player := p as Player
-		if player.dead:
+		if player.dead or player.downed:
 			continue
 		var d := global_position.distance_squared_to(player.global_position)
 		if d < best_d:
