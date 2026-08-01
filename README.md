@@ -30,9 +30,15 @@ godot --path . --editor   # open the editor
 ## Multiplayer
 
 - **Solo** works everywhere, including the browser build.
-- **Co-op (2–4)** currently uses ENet on desktop builds: one player hosts
-  (port 7777), others join by IP on the same LAN (or via port forwarding).
-  Browser co-op (WebRTC + signaling) is milestone M2.
+- **Online co-op (2–4, WebRTC room codes)** — works in the browser and on
+  desktop. The host clicks HOST ONLINE and shares the 5-letter room code (on
+  web, a `#room=CODE` invite link that auto-joins). Game traffic is
+  peer-to-peer; a tiny signaling broker (`signaling/`) only sets up the
+  connection. Point the game at your broker via the `network/signaling/url`
+  project setting (`wss://...` in production — see `signaling/README.md` for
+  deployment). Desktop builds additionally need the webrtc-native extension:
+  `scripts/fetch_webrtc.sh`.
+- **LAN co-op (desktop)** — ENet fallback: host on port 7777, join by IP.
 
 ## CI / deployment
 
@@ -40,6 +46,16 @@ godot --path . --editor   # open the editor
 that scripts compile and the export succeeds) and deploys `main` to GitHub
 Pages. The web export has thread support disabled, so it runs on Pages
 without cross-origin-isolation headers.
+
+Every PR also runs two gameplay tests headlessly:
+
+- `tests/headless_sim.tscn` — a solo self-playing bot (kites, collects gems,
+  auto-picks upgrades).
+- `scripts/e2e_webrtc.sh` — a real two-instance WebRTC session through the
+  actual signaling broker, verifying spawn + replication on both sides.
+
+`signaling-image.yml` publishes the broker container to GHCR on merges that
+touch `signaling/`.
 
 ## Placeholder art
 
