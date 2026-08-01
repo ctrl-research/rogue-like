@@ -59,6 +59,11 @@ venv/
 /free-games-test
 /free-games
 
+# Godot
+.godot/
+*.translation
+export_credentials.cfg
+
 # Misc
 *.tmp
 *.temp

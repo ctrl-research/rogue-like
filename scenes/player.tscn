@@ -1,0 +1,61 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://src/player.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/sprites/diver.png" id="2_diver"]
+[ext_resource type="Texture2D" path="res://assets/sprites/light.png" id="3_light"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_body"]
+radius = 6.0
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_move"]
+properties/0/path = NodePath(".:position")
+properties/0/spawn = false
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:velocity")
+properties/1/spawn = false
+properties/1/replication_mode = 1
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_state"]
+properties/0/path = NodePath(".:hp")
+properties/0/spawn = false
+properties/0/replication_mode = 2
+properties/1/path = NodePath(".:dead")
+properties/1/spawn = false
+properties/1/replication_mode = 2
+
+[node name="Player" type="CharacterBody2D"]
+collision_layer = 1
+collision_mask = 4
+motion_mode = 1
+script = ExtResource("1_script")
+
+[node name="Sprite" type="Sprite2D" parent="."]
+texture = ExtResource("2_diver")
+
+[node name="Collision" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_body")
+
+[node name="Lamp" type="PointLight2D" parent="."]
+color = Color(1, 0.95, 0.85, 1)
+energy = 1.2
+texture = ExtResource("3_light")
+texture_scale = 2.2
+
+[node name="Camera" type="Camera2D" parent="."]
+enabled = false
+zoom = Vector2(2, 2)
+position_smoothing_enabled = true
+
+[node name="NameLabel" type="Label" parent="."]
+offset_left = -20.0
+offset_top = -24.0
+offset_right = 20.0
+offset_bottom = -12.0
+theme_override_font_sizes/font_size = 8
+horizontal_alignment = 1
+
+[node name="MovementSync" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_move")
+
+[node name="StateSync" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_state")
