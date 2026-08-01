@@ -1,0 +1,338 @@
+extends Node2D
+## Run orchestrator. The server owns all game state (waves, oxygen, XP,
+## objectives) and mirrors what the HUD needs to clients via RPC. Clients only
+## render synced state and forward their own input to their diver.
+
+const PLAYER_SCENE := preload("res://scenes/player.tscn")
+const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
+const PROJECTILE_SCENE := preload("res://scenes/projectile.tscn")
+const GEM_SCENE := preload("res://scenes/xp_gem.tscn")
+const CRATE_SCENE := preload("res://scenes/salvage_crate.tscn")
+const BELL_SCENE := preload("res://scenes/dive_bell.tscn")
+
+const HUD_SYNC_INTERVAL := 0.25
+const WALL_LAYER := 4
+
+# State the HUD reads. Kept current on clients via _rpc_hud / _rpc_game_over.
+var oxygen := GameRules.OXYGEN_TIME
+var crates_left := GameRules.CRATE_COUNT
+var team_level := 1
+var team_xp := 0
+var xp_needed := GameRules.xp_needed(1)
+var elapsed := 0.0
+var extraction_progress := 0.0
+var game_over := false
+var victory := false
+
+# Server-only state.
+var _started := false
+var _ready_peers := {}
+var _spawn_accum := 0.0
+var _hud_accum := 0.0
+var _bell: Area2D
+var _rng := RandomNumberGenerator.new()
+
+@onready var players: Node2D = $Players
+@onready var enemies: Node2D = $Enemies
+@onready var loot: Node2D = $Loot
+@onready var projectiles: Node2D = $Projectiles
+
+
+func _ready() -> void:
+	$PlayerSpawner.spawn_function = _spawn_player
+	$EnemySpawner.spawn_function = _spawn_enemy
+	$LootSpawner.spawn_function = _spawn_loot
+	$ProjectileSpawner.spawn_function = _spawn_projectile
+	_build_walls()
+	if multiplayer.is_server():
+		multiplayer.peer_disconnected.connect(_on_peer_left)
+		_mark_ready(1)
+	else:
+		_rpc_notify_ready.rpc_id(1)
+
+
+func _process(delta: float) -> void:
+	if not multiplayer.is_server() or not _started or game_over:
+		return
+
+	elapsed += delta
+	oxygen = maxf(0.0, oxygen - delta)
+	if oxygen <= 0.0:
+		for p in _alive_players():
+			p.take_damage(GameRules.SUFFOCATION_DPS * delta)
+
+	_spawn_waves(delta)
+	_check_extraction(delta)
+
+	_hud_accum += delta
+	if _hud_accum >= HUD_SYNC_INTERVAL:
+		_hud_accum = 0.0
+		_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed, extraction_progress)
+
+
+# --- Server API called by gameplay nodes ---------------------------------
+
+
+func fire_projectile(from: Vector2, dir: Vector2, damage: float) -> void:
+	$ProjectileSpawner.spawn({"pos": from, "dir": dir, "damage": damage})
+
+
+func on_enemy_killed(enemy: Enemy) -> void:
+	# Deferred: kills happen inside physics callbacks, and spawning an Area2D
+	# there would register collision shapes while the physics server is
+	# flushing queries.
+	_spawn_loot_deferred.call_deferred("gem", enemy.global_position)
+	enemy.queue_free()
+
+
+func add_xp(amount: int) -> void:
+	team_xp += amount
+	while team_xp >= xp_needed:
+		team_xp -= xp_needed
+		team_level += 1
+		xp_needed = GameRules.xp_needed(team_level)
+		_grant_upgrades()
+
+
+func on_crate_collected() -> void:
+	crates_left -= 1
+	if crates_left > 0:
+		_rpc_toast.rpc("Salvage secured — %d left" % crates_left)
+	else:
+		_spawn_loot_deferred.call_deferred("bell", GameRules.ARENA_SIZE / 2.0)
+		_rpc_toast.rpc("All salvage secured! The dive bell has dropped — get to it!")
+
+
+func _spawn_loot_deferred(kind: String, pos: Vector2) -> void:
+	if game_over:
+		return
+	var node: Node = $LootSpawner.spawn({"kind": kind, "pos": pos})
+	if kind == "bell":
+		_bell = node as Area2D
+
+
+func on_player_died() -> void:
+	if _alive_players().is_empty():
+		_finish(false)
+	else:
+		_rpc_toast.rpc("A diver went down!")
+
+
+# --- Spawn functions (run on every peer when the spawner replicates) ------
+
+
+func _spawn_player(data: Variant) -> Node:
+	var node: Player = PLAYER_SCENE.instantiate()
+	node.name = "Player%d" % data.pid
+	node.peer_id = data.pid
+	node.player_index = data.index
+	node.position = data.pos
+	node.game = self
+	return node
+
+
+func _spawn_enemy(data: Variant) -> Node:
+	var node: Enemy = ENEMY_SCENE.instantiate()
+	node.position = data.pos
+	node.game = self
+	node.setup(data.kind, data.hp_scale)
+	return node
+
+
+func _spawn_loot(data: Variant) -> Node:
+	var node: Area2D
+	match data.kind:
+		"gem":
+			node = GEM_SCENE.instantiate()
+		"crate":
+			node = CRATE_SCENE.instantiate()
+		"bell":
+			node = BELL_SCENE.instantiate()
+	node.position = data.pos
+	node.set("game", self)
+	return node
+
+
+func _spawn_projectile(data: Variant) -> Node:
+	var node: Area2D = PROJECTILE_SCENE.instantiate()
+	node.position = data.pos
+	node.dir = data.dir
+	node.damage = data.damage
+	return node
+
+
+# --- Run lifecycle ---------------------------------------------------------
+
+
+@rpc("any_peer", "reliable")
+func _rpc_notify_ready() -> void:
+	if multiplayer.is_server():
+		_mark_ready(multiplayer.get_remote_sender_id())
+
+
+func _mark_ready(pid: int) -> void:
+	_ready_peers[pid] = true
+	if _started:
+		return
+	var expected: Array[int] = [1]
+	for p in multiplayer.get_peers():
+		expected.append(p)
+	for p in expected:
+		if not _ready_peers.has(p):
+			return
+	_started = true
+	_start_run(expected)
+
+
+func _start_run(pids: Array[int]) -> void:
+	_rng.randomize()
+	var center := GameRules.ARENA_SIZE / 2.0
+	var offsets: Array[Vector2] = [
+		Vector2(-16, -16), Vector2(16, -16), Vector2(-16, 16), Vector2(16, 16),
+	]
+	for i in pids.size():
+		$PlayerSpawner.spawn({"pid": pids[i], "index": i, "pos": center + offsets[i % offsets.size()]})
+	_place_crates()
+	_rpc_toast.rpc("Recover %d salvage crates, then reach the dive bell. Watch your O2." % GameRules.CRATE_COUNT)
+
+
+func _place_crates() -> void:
+	var center := GameRules.ARENA_SIZE / 2.0
+	for i in GameRules.CRATE_COUNT:
+		var pos := center
+		while pos.distance_to(center) < 220.0:
+			pos = Vector2(
+				_rng.randf_range(100.0, GameRules.ARENA_SIZE.x - 100.0),
+				_rng.randf_range(100.0, GameRules.ARENA_SIZE.y - 100.0),
+			)
+		$LootSpawner.spawn({"kind": "crate", "pos": pos})
+
+
+func _spawn_waves(delta: float) -> void:
+	_spawn_accum += delta
+	var interval := clampf(2.2 - elapsed * 0.012, 0.45, 2.2)
+	if _spawn_accum < interval or enemies.get_child_count() >= GameRules.ENEMY_CAP:
+		return
+	_spawn_accum = 0.0
+
+	var alive := _alive_players()
+	if alive.is_empty():
+		return
+	var count := 1 + int(elapsed / 40.0) + (Net.player_count() - 1)
+	var hp_scale := 1.0 + 0.5 * (Net.player_count() - 1)
+	var brute_chance := minf(0.35, elapsed / 600.0)
+	for i in count:
+		if enemies.get_child_count() >= GameRules.ENEMY_CAP:
+			break
+		var anchor: Player = alive[_rng.randi() % alive.size()]
+		var angle := _rng.randf() * TAU
+		var dist := _rng.randf_range(260.0, 400.0)
+		var pos := anchor.global_position + Vector2.from_angle(angle) * dist
+		pos = pos.clamp(Vector2(24, 24), GameRules.ARENA_SIZE - Vector2(24, 24))
+		var kind := "brute" if _rng.randf() < brute_chance else "barbfish"
+		$EnemySpawner.spawn({"kind": kind, "pos": pos, "hp_scale": hp_scale})
+
+
+func _check_extraction(delta: float) -> void:
+	if _bell == null or not is_instance_valid(_bell):
+		return
+	var alive := _alive_players()
+	if alive.is_empty():
+		return
+	var inside := _bell.get_overlapping_bodies()
+	var all_in := true
+	for p in alive:
+		if not inside.has(p):
+			all_in = false
+			break
+	if all_in:
+		extraction_progress += delta
+		if extraction_progress >= GameRules.EXTRACTION_TIME:
+			_finish(true)
+	else:
+		extraction_progress = 0.0
+
+
+func _grant_upgrades() -> void:
+	var notes := PackedStringArray()
+	for p in _alive_players():
+		var kind: String = GameRules.UPGRADE_KINDS[_rng.randi() % GameRules.UPGRADE_KINDS.size()]
+		p.apply_upgrade.rpc(kind)
+		notes.append("P%d: %s" % [p.player_index + 1, Player.upgrade_label(kind)])
+	_rpc_toast.rpc("Level %d — %s" % [team_level, ", ".join(notes)])
+
+
+func _finish(win: bool) -> void:
+	_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed, extraction_progress)
+	_rpc_game_over.rpc(win)
+	for e in enemies.get_children():
+		e.queue_free()
+
+
+func _on_peer_left(pid: int) -> void:
+	var node := players.get_node_or_null("Player%d" % pid)
+	if node != null:
+		node.queue_free()
+	if _started and not game_over:
+		# Deferred so the freed node no longer counts among the living.
+		_check_wipe.call_deferred()
+
+
+func _check_wipe() -> void:
+	if not game_over and _started and _alive_players().is_empty():
+		_finish(false)
+
+
+func _alive_players() -> Array[Player]:
+	var out: Array[Player] = []
+	for p in players.get_children():
+		if p is Player and not p.dead and not p.is_queued_for_deletion():
+			out.append(p)
+	return out
+
+
+func _build_walls() -> void:
+	var size := GameRules.ARENA_SIZE
+	var thickness := 32.0
+	var specs := [
+		[Vector2(size.x / 2, -thickness / 2), Vector2(size.x + thickness * 2, thickness)],
+		[Vector2(size.x / 2, size.y + thickness / 2), Vector2(size.x + thickness * 2, thickness)],
+		[Vector2(-thickness / 2, size.y / 2), Vector2(thickness, size.y + thickness * 2)],
+		[Vector2(size.x + thickness / 2, size.y / 2), Vector2(thickness, size.y + thickness * 2)],
+	]
+	for spec in specs:
+		var wall := StaticBody2D.new()
+		wall.collision_layer = WALL_LAYER
+		wall.collision_mask = 0
+		var shape := CollisionShape2D.new()
+		var rect := RectangleShape2D.new()
+		rect.size = spec[1]
+		shape.shape = rect
+		wall.add_child(shape)
+		wall.position = spec[0]
+		add_child(wall)
+
+
+# --- Client-side state mirrors --------------------------------------------
+
+
+@rpc("authority", "unreliable_ordered")
+func _rpc_hud(o: float, c: int, lvl: int, xp: int, need: int, t: float, ext: float) -> void:
+	oxygen = o
+	crates_left = c
+	team_level = lvl
+	team_xp = xp
+	xp_needed = need
+	elapsed = t
+	extraction_progress = ext
+
+
+@rpc("authority", "call_local", "reliable")
+func _rpc_toast(text: String) -> void:
+	$HUD.show_toast(text)
+
+
+@rpc("authority", "call_local", "reliable")
+func _rpc_game_over(win: bool) -> void:
+	game_over = true
+	victory = win

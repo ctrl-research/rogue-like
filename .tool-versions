@@ -2,7 +2,8 @@
 # Humans and AI agents should use these versions for all builds, tests, and tooling.
 # Install with `asdf install` or `mise install`.
 #
-# Uncomment/add entries for your project's stack, e.g.:
-# golang 1.24.4
-# nodejs 22.16.0
-# python 3.13.5
+# Godot has no asdf/mise core plugin; install 4.6.3 manually from
+# https://godotengine.org/download (or `brew install --cask godot`) and keep
+# it in sync with GODOT_VERSION in .github/workflows/build.yml and
+# config/features in project.godot.
+# godot 4.6.3

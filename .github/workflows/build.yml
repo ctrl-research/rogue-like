@@ -1,0 +1,92 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+# Serialise runs per ref. GitHub Pages only allows one deployment at a time,
+# so overlapping main runs race each other and the superseded deployment
+# fails. On main, queue runs so every merge still publishes, in order.
+# Superseded PR runs are simply cancelled (only the newest commit matters).
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  GODOT_VERSION: "4.6.3"
+
+jobs:
+  build:
+    name: Export Web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Godot and export templates
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" godot
+          chmod +x godot
+
+          # Templates extract into a "templates/" directory and must live under
+          # the version-specific export_templates path Godot looks them up in.
+          unzip -q templates.tpz
+          template_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$template_dir"
+          mv templates/* "$template_dir/"
+
+      # Tee Godot output to build.log so the verify step below can fail the run
+      # on parse/autoload errors — a Godot export exits 0 even when scripts fail
+      # to compile, so success alone does not mean the project is healthy.
+      - name: Import project
+        run: ./godot --headless --path . --import 2>&1 | tee -a build.log
+
+      - name: Export Web build
+        run: |
+          set -euo pipefail
+          mkdir -p build/web
+          ./godot --headless --path . --export-release "Web" "build/web/index.html" 2>&1 | tee -a build.log
+          test -f "build/web/index.html"
+
+      - name: Verify no GDScript parse / autoload errors
+        run: |
+          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|Failed to create an autoload|does not inherit from" build.log; then
+            echo "::error::GDScript parse or autoload errors detected during export (see matches above)."
+            exit 1
+          fi
+          echo "No GDScript parse/autoload errors detected."
+
+      - name: Upload Pages artifact (web build)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy-pages:
+    name: Deploy Web to GitHub Pages
+    needs: build
+    # Only publish to production Pages from main; PRs build+export for
+    # validation without deploying.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
