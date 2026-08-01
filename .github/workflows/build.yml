@@ -55,6 +55,11 @@ jobs:
       - name: Import project
         run: ./godot --headless --path . --import 2>&1 | tee -a build.log
 
+      # Self-playing solo run (random movement, auto-picked upgrades) so CI
+      # exercises real gameplay paths, not just script compilation.
+      - name: Headless gameplay smoke test
+        run: ./godot --headless --path . --quit-after 12000 tests/headless_sim.tscn 2>&1 | tee -a build.log
+
       - name: Export Web build
         run: |
           set -euo pipefail
@@ -64,7 +69,7 @@ jobs:
 
       - name: Verify no GDScript parse / autoload errors
         run: |
-          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|Failed to create an autoload|does not inherit from" build.log; then
+          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|Failed to create an autoload|does not inherit from|Can't change this state" build.log; then
             echo "::error::GDScript parse or autoload errors detected during export (see matches above)."
             exit 1
           fi

@@ -11,6 +11,6 @@ func _ready() -> void:
 
 
 func _on_body_entered(body: Node2D) -> void:
-	if body is Player and not body.dead:
+	if body is Player and not body.dead and not body.downed:
 		game.on_crate_collected()
 		queue_free()

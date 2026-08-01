@@ -238,8 +238,31 @@ BELL = {
     },
 }
 
+# 10x10 depth-charge mine: dark steel ball with spikes and a warning light
+MINE = {
+    "grid": [
+        "....R.....",
+        "..S.W.S...",
+        "...SSSS...",
+        ".SSSKKSS..",
+        "..SKKKKS..",
+        "..SKKKKS..",
+        ".SSSKKSSS.",
+        "...SSSS...",
+        "..S....S..",
+        "..........",
+    ],
+    "palette": {
+        "S": "#4a545c",
+        "K": "#2e3438",
+        "W": "#8a949c",
+        "R": "#e04438",
+    },
+}
+
 SPRITES = {
     "diver.png": DIVER,
+    "mine.png": MINE,
     "barbfish.png": BARBFISH,
     "brute.png": BRUTE,
     "harpoon.png": HARPOON,
