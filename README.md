@@ -34,10 +34,11 @@ godot --path . --editor   # open the editor
   desktop. The host clicks HOST ONLINE and shares the 5-letter room code (on
   web, a `#room=CODE` invite link that auto-joins). Game traffic is
   peer-to-peer; a tiny signaling broker (`signaling/`) only sets up the
-  connection. Point the game at your broker via the `network/signaling/url`
-  project setting (`wss://...` in production — see `signaling/README.md` for
-  deployment). Desktop builds additionally need the webrtc-native extension:
-  `scripts/fetch_webrtc.sh`.
+  connection. Production broker: `wss://dive-control.j6n.dev` (the
+  `network/signaling/url` project setting; override locally with the
+  `SIGNALING_URL` env var, e.g. `ws://localhost:9080` with `node
+  signaling/server.js` running). Desktop builds additionally need the
+  webrtc-native extension: `scripts/fetch_webrtc.sh`.
 - **LAN co-op (desktop)** — ENet fallback: host on port 7777, join by IP.
 
 ## CI / deployment

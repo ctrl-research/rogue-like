@@ -32,6 +32,11 @@ static func webrtc_available() -> bool:
 
 
 static func signaling_url() -> String:
+	# Env override for local development and the e2e test (no env on web,
+	# where the project setting — the production broker — always applies).
+	var env_url := OS.get_environment("SIGNALING_URL")
+	if not env_url.is_empty():
+		return env_url
 	return str(ProjectSettings.get_setting("network/signaling/url", DEFAULT_URL))
 
 
