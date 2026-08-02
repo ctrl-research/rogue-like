@@ -12,6 +12,9 @@ signal failed(reason: String)
 
 const DEFAULT_URL := "ws://localhost:9080"
 const DEFAULT_ICE := [{"urls": ["stun:stun.l.google.com:19302"]}]
+## The hub serves multiple games; rooms are namespaced per game id so codes
+## never collide across games.
+const GAME_ID := "abyssal"
 
 var rtc: WebRTCMultiplayerPeer
 var room_code := ""
@@ -89,7 +92,7 @@ func _process(_delta: float) -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not _join_sent:
 				_join_sent = true
-				_send({"type": "join", "room": _room_to_join})
+				_send({"type": "join", "room": _room_to_join, "game": GAME_ID})
 			while _ws.get_available_packet_count() > 0:
 				_handle(_ws.get_packet().get_string_from_utf8())
 		WebSocketPeer.STATE_CLOSED:

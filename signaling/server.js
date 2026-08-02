@@ -18,7 +18,12 @@
  *
  * Protocol (JSON text frames). Host is always peer id 1; clients get ids >= 2.
  *   client -> server:
- *     {type:"join", room:"<CODE>"}      empty/missing room => create a room and host it
+ *     {type:"join", room:"<CODE>", game:"<id>"}
+ *                                       empty/missing room => create a room and host it.
+ *                                       game namespaces rooms so multiple games can
+ *                                       share this hub (lowercase [a-z0-9-], max 32;
+ *                                       missing => "default"). Codes are only unique
+ *                                       per game and never cross namespaces.
  *     {type:"offer"|"answer", id:<dest>, sdp:"..."}
  *     {type:"candidate", id:<dest>, mid:"...", index:N, name:"..."}
  *     {type:"seal"}                     host only: lock the room (no more joins)
@@ -61,8 +66,9 @@ const HOST_ID = 1;
 const ROOM_CODE_LENGTH = 5;
 // Unambiguous alphabet (no 0/O/1/I) so codes are easy to share verbally.
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const GAME_ID_RE = /^[a-z0-9-]{1,32}$/;
 
-// roomCode -> { peers: Map<peerId, ws>, nextId: number, sealed: boolean }
+// "<game>:<roomCode>" -> { peers: Map<peerId, ws>, nextId: number, sealed: boolean }
 const rooms = new Map();
 // ip -> open connection count
 const connectionsByIp = new Map();
@@ -110,7 +116,7 @@ function originAllowed(origin) {
   return ALLOWED_ORIGINS.includes(origin);
 }
 
-function makeRoomCode() {
+function makeRoomCode(game) {
   let code;
   do {
     const bytes = crypto.randomBytes(ROOM_CODE_LENGTH);
@@ -118,13 +124,20 @@ function makeRoomCode() {
     for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
       code += ROOM_CODE_ALPHABET[bytes[i] % ROOM_CODE_ALPHABET.length];
     }
-  } while (rooms.has(code));
+  } while (rooms.has(`${game}:${code}`));
   return code;
 }
 
 function handleJoin(ws, msg) {
   if (ws.room !== null) {
     return closeWithError(ws, "already_joined");
+  }
+
+  // Namespace rooms per game so one hub can serve many games without room
+  // codes colliding across them. Missing => legacy "default" namespace.
+  const game = String(msg.game === undefined ? "default" : msg.game).toLowerCase().trim();
+  if (!GAME_ID_RE.test(game)) {
+    return closeWithError(ws, "invalid_game");
   }
 
   const requested = String(msg.room || "").toUpperCase().trim();
@@ -134,25 +147,28 @@ function handleJoin(ws, msg) {
     if (rooms.size >= MAX_ROOMS) {
       return closeWithError(ws, "server_full");
     }
-    const code = makeRoomCode();
+    const code = makeRoomCode(game);
+    const key = `${game}:${code}`;
     const room = { peers: new Map(), nextId: HOST_ID + 1, sealed: false };
-    rooms.set(code, room);
-    ws.room = code;
+    rooms.set(key, room);
+    ws.room = key;
     ws.peerId = HOST_ID;
     room.peers.set(HOST_ID, ws);
     clearTimeout(ws.joinTimer);
+    // Clients only ever see the bare code; the namespace is server-side.
     send(ws, { type: "id", id: HOST_ID, room: code, host: true });
-    log(`room ${code} created by host (${rooms.size} rooms)`);
+    log(`room ${key} created by host (${rooms.size} rooms)`);
     return;
   }
 
-  const room = rooms.get(requested);
+  const key = `${game}:${requested}`;
+  const room = rooms.get(key);
   if (!room) return closeWithError(ws, "room_not_found");
   if (room.sealed) return closeWithError(ws, "room_sealed");
   if (room.peers.size >= MAX_PEERS) return closeWithError(ws, "room_full");
 
   const id = room.nextId++;
-  ws.room = requested;
+  ws.room = key;
   ws.peerId = id;
   clearTimeout(ws.joinTimer);
 
@@ -167,7 +183,7 @@ function handleJoin(ws, msg) {
   }
 
   room.peers.set(id, ws);
-  log(`peer ${id} joined room ${requested} (${room.peers.size} peers)`);
+  log(`peer ${id} joined room ${key} (${room.peers.size} peers)`);
 }
 
 // Relay a handshake message to a roommate. Only known fields are forwarded
