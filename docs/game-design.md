@@ -120,10 +120,14 @@ Milestone 0 ships Barbfish + Angler brute only.
   (melee, new plasma cutter), Driller (melee grinder, new seismic drill),
   Bomber (AoE burst, Mk2 charges), Echo (AoE pulse), Tinker (summoner).
 
-- **M5 — this PR** — procedurally generated destructible terrain: seeded
-  rock layouts (denser with depth) with guaranteed clearings + corridors,
-  server-authoritative destruction (drill digs fast, cutter chips, charges
-  crater, fauna chew through walls), projectiles blocked by rock.
+- **M5 — done (PR #12)** — procedurally generated destructible terrain:
+  seeded rock layouts (denser with depth) with guaranteed clearings +
+  corridors, server-authoritative destruction (drill digs fast, cutter
+  chips, charges crater, fauna chew through walls), projectiles blocked
+  by rock.
+- **M5.1 — this PR** — universal mining: any diver pushing into rock mines
+  it slowly; mining pauses your weapons ("hands full") unless you carry
+  the seismic drill, whose crews work and shoot at once.
 
 ## Backlog (post-M5)
 
