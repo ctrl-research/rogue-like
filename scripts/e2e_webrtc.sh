@@ -12,6 +12,10 @@ GODOT="${GODOT:-./godot}"
 OUT_DIR="${OUT_DIR:-/tmp/e2e_webrtc}"
 mkdir -p "$OUT_DIR"
 
+# Always test against the local broker, not the production endpoint that the
+# project setting points at.
+export SIGNALING_URL="ws://localhost:9080"
+
 # GNU timeout is absent on stock macOS; fall back to perl's alarm.
 TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
 with_timeout() {

@@ -60,7 +60,7 @@ move_right={
 
 [network]
 
-signaling/url="ws://localhost:9080"
+signaling/url="wss://dive-control.j6n.dev"
 signaling/ice_servers="[{\"urls\": [\"stun:stun.l.google.com:19302\"]}]"
 
 [rendering]
