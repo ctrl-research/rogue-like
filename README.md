@@ -34,7 +34,7 @@ godot --path . --editor   # open the editor
   desktop. The host clicks HOST ONLINE and shares the 5-letter room code (on
   web, a `#room=CODE` invite link that auto-joins). Game traffic is
   peer-to-peer; a tiny signaling broker (`signaling/`) only sets up the
-  connection. Production broker: `wss://dive-control.j6n.dev` (the
+  connection. Production hub: `wss://lobby.j6n.dev` (the
   `network/signaling/url` project setting; override locally with the
   `SIGNALING_URL` env var, e.g. `ws://localhost:9080` with `node
   signaling/server.js` running). Desktop builds additionally need the
