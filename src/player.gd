@@ -26,6 +26,8 @@ const DRONE_TEXTURE := preload("res://assets/sprites/drone.png")
 const DRONE_ORBIT_RADIUS := 34.0
 const DRONE_ORBIT_SPEED := 2.4  # rad/s
 const DRONE_HIT_RANGE := 16.0
+const MINE_TIME := 0.7  # seconds per mining bite (the drill is far faster)
+const MINE_RADIUS := 10.0
 
 var peer_id := 1
 var player_index := 0
@@ -41,6 +43,7 @@ var dead := false:
 var downed := false:
 	set = _set_downed
 var revive_progress := 0.0
+var mine_dir := Vector2.ZERO  # synced; nonzero while pushing into rock
 
 var weapons := {"harpoon": 1}  # id -> level
 var passives := {}  # id -> level
@@ -50,6 +53,7 @@ var _pending_offers: Array = []  # server-only queue of offers (Array[Array])
 var _pickup_shape: CircleShape2D
 var _drones: Array[Sprite2D] = []
 var _shake := 0.0
+var _mine_accum := 0.0
 
 
 func _enter_tree() -> void:
@@ -101,9 +105,21 @@ func _physics_process(delta: float) -> void:
 
 	if is_local():
 		velocity = Vector2.ZERO
+		mine_dir = Vector2.ZERO
 		if not downed:
-			velocity = Input.get_vector("move_left", "move_right", "move_up", "move_down") * move_speed
+			var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+			velocity = input * move_speed
 			move_and_slide()
+			# Mining: colliding with rock while actively pressing into it.
+			# Detected here on the owning client (movement is client-auth)
+			# and synced; the server does the authoritative digging.
+			if input != Vector2.ZERO:
+				for i in get_slide_collision_count():
+					var col := get_slide_collision(i)
+					if col.get_collider() is TileMapLayer \
+							and input.normalized().dot(-col.get_normal()) > 0.5:
+						mine_dir = input.normalized()
+						break
 
 	if velocity.x != 0.0:
 		$Sprite.flip_h = velocity.x < 0.0
@@ -120,6 +136,7 @@ func _physics_process(delta: float) -> void:
 		if downed:
 			_server_downed_tick(delta)
 		else:
+			_server_mining(delta)
 			_server_combat(delta)
 
 
@@ -231,7 +248,30 @@ func _apply_passives() -> void:
 # --- Combat (server) -------------------------------------------------------
 
 
+## Everyone can mine by pushing into rock — slowly. The drill remains the
+## real excavation tool (bigger bites, much faster, digs while moving).
+func _server_mining(delta: float) -> void:
+	if mine_dir == Vector2.ZERO:
+		_mine_accum = 0.0
+		return
+	_mine_accum += delta
+	if _mine_accum < MINE_TIME:
+		return
+	_mine_accum = 0.0
+	var center := global_position + mine_dir * 16.0
+	if game.terrain.destroy_in_radius(center, MINE_RADIUS) > 0:
+		game.spawn_slash(center, mine_dir.angle(), Color(0.8, 0.7, 0.55), 0.6)
+
+
+func is_mining() -> bool:
+	return mine_dir != Vector2.ZERO
+
+
 func _server_combat(delta: float) -> void:
+	# Hands full: mining pauses the guns — unless you carry the drill, whose
+	# crews are used to working and shooting at once.
+	if is_mining() and not weapons.has("drill"):
+		return
 	for id in weapons:
 		_cooldowns[id] = _cooldowns.get(id, 0.0) - delta
 		if _cooldowns[id] > 0.0:
