@@ -24,6 +24,8 @@ const FINS_PER_LEVEL := 0.04
 
 var bank := 0
 var levels := {}  # id -> int
+var unlocked_divers: Array = [Divers.DEFAULT]
+var diver := Divers.DEFAULT
 
 var _save_path := SAVE_PATH
 
@@ -54,6 +56,32 @@ func buy(id: String) -> bool:
 	return true
 
 
+func diver_unlocked(id: String) -> bool:
+	return unlocked_divers.has(id)
+
+
+func can_buy_diver(id: String) -> bool:
+	return Divers.valid(id) and not diver_unlocked(id) and bank >= int(Divers.DIVERS[id].cost)
+
+
+func buy_diver(id: String) -> bool:
+	if not can_buy_diver(id):
+		return false
+	bank -= int(Divers.DIVERS[id].cost)
+	unlocked_divers.append(id)
+	select_diver(id)
+	return true
+
+
+func select_diver(id: String) -> bool:
+	if not Divers.valid(id) or not diver_unlocked(id):
+		return false
+	diver = id
+	save_data()
+	changed.emit()
+	return true
+
+
 func bank_salvage(amount: int) -> void:
 	if amount <= 0:
 		return
@@ -69,12 +97,15 @@ func meta_dict() -> Dictionary:
 		"hull": level("hull"),
 		"harpoon": level("harpoon"),
 		"fins": level("fins"),
+		"diver": diver,
 	}
 
 
 func load_data() -> void:
 	bank = 0
 	levels = {}
+	unlocked_divers = [Divers.DEFAULT]
+	diver = Divers.DEFAULT
 	if not FileAccess.file_exists(_save_path):
 		return
 	var file := FileAccess.open(_save_path, FileAccess.READ)
@@ -88,6 +119,14 @@ func load_data() -> void:
 	if raw is Dictionary:
 		for id in UPGRADES:
 			levels[id] = clampi(int(raw.get(id, 0)), 0, int(UPGRADES[id].max))
+	var raw_divers: Variant = parsed.get("divers", [])
+	if raw_divers is Array:
+		for id in raw_divers:
+			if Divers.valid(str(id)) and not unlocked_divers.has(str(id)):
+				unlocked_divers.append(str(id))
+	var saved_diver := str(parsed.get("diver", Divers.DEFAULT))
+	if Divers.valid(saved_diver) and diver_unlocked(saved_diver):
+		diver = saved_diver
 
 
 func save_data() -> void:
@@ -95,4 +134,9 @@ func save_data() -> void:
 	if file == null:
 		push_warning("Station: could not write %s" % _save_path)
 		return
-	file.store_string(JSON.stringify({"bank": bank, "levels": levels}))
+	file.store_string(JSON.stringify({
+		"bank": bank,
+		"levels": levels,
+		"divers": unlocked_divers,
+		"diver": diver,
+	}))

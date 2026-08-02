@@ -39,6 +39,20 @@ const WEAPONS := {
 		"damage": 15.0,
 		"range": 0.0,
 	},
+	"cutter": {
+		"title": "PLASMA CUTTER",
+		"desc": "Close arc slashes, heavy damage",
+		"cd": 1.0,
+		"damage": 18.0,
+		"range": 46.0,
+	},
+	"drill": {
+		"title": "SEISMIC DRILL",
+		"desc": "Grinds everything just ahead",
+		"cd": 0.35,
+		"damage": 5.0,
+		"range": 44.0,
+	},
 }
 
 ## Maxing a weapon while owning its paired passive unlocks an evolution

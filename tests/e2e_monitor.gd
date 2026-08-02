@@ -22,6 +22,10 @@ func _ready() -> void:
 	if role == "host":
 		Net.host_online()
 	else:
+		# Dive as a non-default kit so the host-side check proves diver kits
+		# replicate through the meta handshake (test-only forced unlock).
+		Station.unlocked_divers = [Divers.DEFAULT, "lancer"]
+		Station.diver = "lancer"
 		var code := OS.get_environment("E2E_ROOM")
 		print("[e2e-client] joining room %s" % code)
 		Net.join_online(code)
@@ -84,6 +88,12 @@ func _run_verified(min_elapsed: float) -> bool:
 	var player_count: int = cs.players.get_child_count()
 	var enemy_count: int = cs.enemies.get_child_count()
 	print("[e2e-%s] players=%d enemies=%d elapsed=%.1f" % [role, player_count, enemy_count, cs.elapsed])
+	if role == "host" and _phase == "run1":
+		# The client dives as the Lancer; its kit must exist on OUR copy of
+		# its player node (spawn-data meta replication).
+		for p in cs.players.get_children():
+			if p is Player and p.peer_id != 1:
+				print("E2E_KIT_%s" % ("OK" if p.weapons.has("lance") else "FAIL"))
 	return player_count == 2 and enemy_count > 0
 
 

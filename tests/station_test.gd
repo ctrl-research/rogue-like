@@ -29,6 +29,23 @@ func _ready() -> void:
 	Station.bank = 9999
 	_check(not Station.can_buy("o2"), "cannot buy past max level")
 
+	# Divers: unlock, select, persist, and reject locked selections.
+	Station.bank = 0
+	Station.unlocked_divers = [Divers.DEFAULT]
+	Station.diver = Divers.DEFAULT
+	_check(not Station.can_buy_diver("lancer"), "cannot buy diver broke")
+	_check(not Station.select_diver("lancer"), "cannot select locked diver")
+	Station.bank_salvage(150)
+	_check(Station.buy_diver("lancer"), "buy diver with funds")
+	_check(Station.diver == "lancer" and Station.bank == 0, "buy selects and deducts")
+	_check(not Station.can_buy_diver("lancer"), "cannot re-buy owned diver")
+	_check(Station.select_diver(Divers.DEFAULT), "reselect default")
+	_check(str(Station.meta_dict()["diver"]) == Divers.DEFAULT, "meta carries diver")
+	Station.bank = 0
+	Station.unlocked_divers = [Divers.DEFAULT]
+	Station.load_data()
+	_check(Station.diver_unlocked("lancer"), "diver unlock survives save/load")
+
 	if _failures.is_empty():
 		print("STATION_TEST_OK")
 		get_tree().quit(0)

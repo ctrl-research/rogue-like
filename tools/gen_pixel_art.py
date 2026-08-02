@@ -350,6 +350,25 @@ MAW = {
     },
 }
 
+# 16x10 slash crescent (melee cutter/drill impact visual, tinted at runtime)
+SLASH = {
+    "grid": [
+        "......WWWW......",
+        "....WWWWWWWW....",
+        "..WWWW....WWWW..",
+        ".WWW........WWW.",
+        ".WW..........WW.",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ],
+    "palette": {
+        "W": "#f0f8ffdd",
+    },
+}
+
 # 8x8 drone: little brass helper bot
 DRONE = {
     "grid": [
@@ -377,6 +396,7 @@ SPRITES = {
     "jelly.png": JELLY,
     "maw.png": MAW,
     "drone.png": DRONE,
+    "slash.png": SLASH,
     "barbfish.png": BARBFISH,
     "brute.png": BRUTE,
     "harpoon.png": HARPOON,

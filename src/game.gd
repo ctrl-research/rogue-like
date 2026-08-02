@@ -9,6 +9,7 @@ const PROJECTILE_SCENE := preload("res://scenes/projectile.tscn")
 const DEPTH_CHARGE_SCENE := preload("res://scenes/depth_charge.tscn")
 const GEM_SCENE := preload("res://scenes/xp_gem.tscn")
 const RING_SCENE := preload("res://scenes/sonar_ring.tscn")
+const SLASH_SCENE := preload("res://scenes/slash.tscn")
 const CRATE_SCENE := preload("res://scenes/salvage_crate.tscn")
 const BELL_SCENE := preload("res://scenes/dive_bell.tscn")
 
@@ -112,6 +113,13 @@ func drop_charge(at: Vector2, damage: float, radius: float, stun := 0.0) -> void
 ## Cosmetic sonar ring, replicated so every peer sees the pulse.
 func spawn_ring(at: Vector2, radius: float) -> void:
 	$ProjectileSpawner.spawn({"type": "ring", "pos": at, "radius": radius})
+
+
+## Cosmetic melee impact, replicated so every peer sees the slash.
+func spawn_slash(at: Vector2, angle: float, tint: Color, visual_scale: float) -> void:
+	$ProjectileSpawner.spawn({
+		"type": "slash", "pos": at, "angle": angle, "tint": tint, "vscale": visual_scale,
+	})
 
 
 func add_oxygen(seconds: float) -> void:
@@ -253,6 +261,13 @@ func _spawn_projectile(data: Variant) -> Node:
 		ring.position = data.pos
 		ring.radius = data.radius
 		return ring
+	if data.type == "slash":
+		var slash: Node2D = SLASH_SCENE.instantiate()
+		slash.position = data.pos
+		slash.rotation = data.angle
+		slash.tint = data.tint
+		slash.visual_scale = data.vscale
+		return slash
 	var node: Area2D = PROJECTILE_SCENE.instantiate()
 	node.position = data.pos
 	node.dir = data.dir

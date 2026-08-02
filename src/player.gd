@@ -74,8 +74,14 @@ func _ready() -> void:
 	_pickup_shape = CircleShape2D.new()
 	_pickup_shape.radius = BASE_PICKUP_RADIUS
 	$Pickup/Shape.shape = _pickup_shape
+	# Diver kit rides the station meta in spawn data, so every peer builds
+	# the same starting loadout.
+	var diver_id := str(meta.get("diver", Divers.DEFAULT))
+	weapons = Divers.kit_weapons(diver_id)
+	passives = Divers.kit_passives(diver_id)
 	_apply_passives()
 	hp = max_hp
+	_update_drones()
 	if multiplayer.is_server():
 		$Pickup.area_entered.connect(_on_pickup)
 
@@ -298,7 +304,41 @@ func _fire_weapon(id: String) -> bool:
 			if not any_hit:
 				return false
 			game.spawn_ring(global_position, radius)
+		"cutter":
+			# Melee arc: heavy hit on everything in a zone toward the target.
+			var target := _nearest_enemy(reach)
+			if target == null:
+				return false
+			var dir := (target.global_position - global_position).normalized()
+			var center := global_position + dir * 22.0
+			_damage_zone(center, 34.0, dmg)
+			game.spawn_slash(center, dir.angle(), Color(0.85, 0.95, 1.0), 1.1)
+		"drill":
+			# Grinder: rapid ticks in a small zone ahead (movement direction,
+			# falling back to the nearest threat). Built to chew terrain later.
+			var dir := velocity.normalized() if velocity.length() > 5.0 else Vector2.ZERO
+			if dir == Vector2.ZERO:
+				var target := _nearest_enemy(reach)
+				if target == null:
+					return false
+				dir = (target.global_position - global_position).normalized()
+			var center := global_position + dir * 20.0
+			if _damage_zone(center, 26.0, dmg) == 0:
+				return false
+			game.spawn_slash(center, dir.angle(), Color(1.0, 0.75, 0.4), 0.7)
 	return true
+
+
+## Server: damage every enemy within radius of a point; returns hit count.
+func _damage_zone(center: Vector2, radius: float, dmg: float) -> int:
+	var hits := 0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		var enemy := e as Enemy
+		if not enemy.is_queued_for_deletion() \
+				and center.distance_to(enemy.global_position) <= radius:
+			enemy.take_damage(dmg)
+			hits += 1
+	return hits
 
 
 func _nearest_enemy(reach: float) -> Node2D:
