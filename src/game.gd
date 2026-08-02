@@ -47,6 +47,9 @@ var _rng := RandomNumberGenerator.new()
 @onready var enemies: Node2D = $Enemies
 @onready var loot: Node2D = $Loot
 @onready var projectiles: Node2D = $Projectiles
+@onready var terrain: Terrain = $Terrain
+
+var terrain_initial_cells := 0  # determinism fingerprint (see e2e)
 
 
 func _ready() -> void:
@@ -313,6 +316,7 @@ func _start_run(pids: Array[int]) -> void:
 	_max_oxygen = GameRules.OXYGEN_TIME + o2_bonus
 	oxygen = _max_oxygen
 
+	_build_site()
 	var offsets := _spawn_offsets()
 	for i in pids.size():
 		$PlayerSpawner.spawn({
@@ -321,15 +325,13 @@ func _start_run(pids: Array[int]) -> void:
 			"pos": GameRules.ARENA_SIZE / 2.0 + offsets[i % offsets.size()],
 			"meta": _metas.get(pids[i], {}),
 		})
-	_place_crates()
 	_rpc_toast.rpc("Recover %d salvage crates, then reach the dive bell. Watch your O2." % GameRules.CRATE_COUNT)
 
 
-func _spawn_offsets() -> Array[Vector2]:
-	return [Vector2(-16, -16), Vector2(16, -16), Vector2(-16, 16), Vector2(16, 16)]
-
-
-func _place_crates() -> void:
+## Server: roll the site layout, broadcast so every peer builds identical
+## terrain, then place the crates in their carved clearings.
+func _build_site() -> void:
+	var spots := PackedVector2Array()
 	var center := GameRules.ARENA_SIZE / 2.0
 	for i in GameRules.CRATE_COUNT:
 		var pos := center
@@ -338,7 +340,20 @@ func _place_crates() -> void:
 				_rng.randf_range(100.0, GameRules.ARENA_SIZE.x - 100.0),
 				_rng.randf_range(100.0, GameRules.ARENA_SIZE.y - 100.0),
 			)
-		$LootSpawner.spawn({"kind": "crate", "pos": pos})
+		spots.append(pos)
+	_rpc_build_site.rpc(_rng.randi(), depth, spots)
+	for spot in spots:
+		$LootSpawner.spawn({"kind": "crate", "pos": spot})
+
+
+@rpc("authority", "call_local", "reliable")
+func _rpc_build_site(map_seed: int, site_depth: int, crate_spots: PackedVector2Array) -> void:
+	terrain.build(map_seed, site_depth, crate_spots)
+	terrain_initial_cells = terrain.get_used_cells().size()
+
+
+func _spawn_offsets() -> Array[Vector2]:
+	return [Vector2(-16, -16), Vector2(16, -16), Vector2(-16, 16), Vector2(16, 16)]
 
 
 func _spawn_waves(delta: float) -> void:
@@ -362,6 +377,7 @@ func _spawn_waves(delta: float) -> void:
 		var dist := _rng.randf_range(260.0, 400.0)
 		var pos := anchor.global_position + Vector2.from_angle(angle) * dist
 		pos = pos.clamp(Vector2(24, 24), GameRules.ARENA_SIZE - Vector2(24, 24))
+		pos = terrain.find_open_near(pos)
 		$EnemySpawner.spawn({"kind": _roll_kind(brute_chance), "pos": pos, "hp_scale": hp_scale})
 
 
@@ -453,7 +469,7 @@ func choose_descend() -> void:
 			diver.hp = diver.max_hp * GameRules.BLEED_FRACTION
 		diver.teleport.rpc(GameRules.ARENA_SIZE / 2.0 + offsets[i % offsets.size()])
 		i += 1
-	_place_crates.call_deferred()
+	_build_site.call_deferred()
 	_rpc_toast.rpc("Descending... depth %d. The trench grows hungrier." % depth)
 
 

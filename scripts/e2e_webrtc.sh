@@ -79,6 +79,12 @@ grep -q "E2E_HOST_OK" "$OUT_DIR/host.log"             || { echo "MISSING E2E_HOS
 grep -q "E2E_CLIENT_OK" "$OUT_DIR/client.log"         || { echo "MISSING E2E_CLIENT_OK"; FAIL=1; }
 grep -q "E2E_HOST_RETRY_OK" "$OUT_DIR/host.log"       || { echo "MISSING E2E_HOST_RETRY_OK"; FAIL=1; }
 grep -q "E2E_KIT_OK" "$OUT_DIR/host.log"              || { echo "MISSING E2E_KIT_OK"; FAIL=1; }
+# Terrain must be byte-identical on both peers (built from the same seed).
+HC="$(grep -oE 'terrain_cells=[0-9]+' "$OUT_DIR/host.log" | head -1 | cut -d= -f2)"
+CC="$(grep -oE 'terrain_cells=[0-9]+' "$OUT_DIR/client.log" | head -1 | cut -d= -f2)"
+if [ -z "$HC" ] || [ "$HC" = "0" ] || [ "$HC" != "$CC" ]; then
+  echo "TERRAIN FINGERPRINT MISMATCH: host=$HC client=$CC"; FAIL=1
+fi
 grep -q "E2E_CLIENT_RETRY_OK" "$OUT_DIR/client.log"   || { echo "MISSING E2E_CLIENT_RETRY_OK"; FAIL=1; }
 # Script and replication errors mean sync is silently broken even if the
 # smoke markers pass — treat them as failures.

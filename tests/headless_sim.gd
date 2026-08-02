@@ -143,8 +143,10 @@ func _wire_player() -> void:
 			_player = p
 			_player.upgrade_offered.connect(_on_offer)
 			# Preload a maxed harpoon + magnet so the evolution card (and the
-			# chain-harpoon behavior) is exercised from the first level-up.
+			# chain-harpoon behavior) is exercised from the first level-up,
+			# plus a drill so wandering into rock exercises destruction.
 			_player.weapons["harpoon"] = GameRules.WEAPON_MAX_LEVEL
+			_player.weapons["drill"] = 1
 			_player.passives["magnet"] = 1
 			return
 

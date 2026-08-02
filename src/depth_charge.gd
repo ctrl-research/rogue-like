@@ -39,4 +39,8 @@ func _explode() -> void:
 				if stun > 0.0:
 					enemy.stun(stun)
 				enemy.take_damage(damage)
+		# Blast a crater in the rock (slightly smaller than the damage radius).
+		var game: Node = get_tree().current_scene
+		if game != null and game.get("terrain") != null:
+			game.terrain.destroy_in_radius(global_position, radius * 0.8)
 		get_tree().create_timer(0.35).timeout.connect(queue_free)

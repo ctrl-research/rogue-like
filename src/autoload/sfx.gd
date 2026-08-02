@@ -10,7 +10,7 @@ extends Node
 # there is a hard parse error that fails CI.
 const NAMES: Array[String] = [
 	"shoot", "hit", "kill", "pickup", "crate", "levelup", "explosion",
-	"sonar", "downed", "revive", "bell", "extract", "defeat", "warning",
+	"sonar", "downed", "revive", "bell", "extract", "defeat", "warning", "dig",
 ]
 
 const MAX_VOICES := 24

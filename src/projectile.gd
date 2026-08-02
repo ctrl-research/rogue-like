@@ -40,6 +40,8 @@ func _physics_process(delta: float) -> void:
 
 func _on_body_entered(body: Node2D) -> void:
 	if not body is Enemy:
+		# Rock (or any other solid): bolts don't swim through stone.
+		queue_free()
 		return
 	body.take_damage(damage)
 	_hit.append(body)

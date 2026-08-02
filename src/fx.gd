@@ -21,12 +21,15 @@ static func damage_number(ctx: Node, pos: Vector2, amount: float, color := Color
 	label.z_index = 50
 	label.position = pos + Vector2(randf_range(-7.0, 7.0), -8.0)
 	label.add_to_group("fx_dmg")
-	tree.current_scene.add_child(label)
-	var tween := label.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(label, "position", label.position + Vector2(0, -16), 0.55)
-	tween.tween_property(label, "modulate:a", 0.0, 0.4).set_delay(0.15)
-	tween.chain().tween_callback(label.queue_free)
+	# Deferred: fx spawn from physics callbacks and node-teardown signals,
+	# when the parent may be mid-child-setup.
+	label.tree_entered.connect(func() -> void:
+		var tween := label.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(label, "position", label.position + Vector2(0, -16), 0.55)
+		tween.tween_property(label, "modulate:a", 0.0, 0.4).set_delay(0.15)
+		tween.chain().tween_callback(label.queue_free))
+	tree.current_scene.add_child.call_deferred(label)
 
 
 static func poof(ctx: Node, pos: Vector2, color := Color(0.5, 0.85, 0.9)) -> void:
@@ -50,7 +53,7 @@ static func poof(ctx: Node, pos: Vector2, color := Color(0.5, 0.85, 0.9)) -> voi
 	particles.color = color
 	particles.position = pos
 	particles.add_to_group("fx_poof")
-	tree.current_scene.add_child(particles)
+	tree.current_scene.add_child.call_deferred(particles)
 	tree.create_timer(0.8).timeout.connect(particles.queue_free)
 
 

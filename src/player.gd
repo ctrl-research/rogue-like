@@ -305,17 +305,20 @@ func _fire_weapon(id: String) -> bool:
 				return false
 			game.spawn_ring(global_position, radius)
 		"cutter":
-			# Melee arc: heavy hit on everything in a zone toward the target.
+			# Melee arc: heavy hit on everything in a zone toward the target;
+			# chips rock slowly as a side effect.
 			var target := _nearest_enemy(reach)
 			if target == null:
 				return false
 			var dir := (target.global_position - global_position).normalized()
 			var center := global_position + dir * 22.0
 			_damage_zone(center, 34.0, dmg)
+			game.terrain.destroy_in_radius(center, 10.0)
 			game.spawn_slash(center, dir.angle(), Color(0.85, 0.95, 1.0), 1.1)
 		"drill":
 			# Grinder: rapid ticks in a small zone ahead (movement direction,
-			# falling back to the nearest threat). Built to chew terrain later.
+			# falling back to the nearest threat). THE digging tool: fires
+			# whenever there's rock OR fauna to grind.
 			var dir := velocity.normalized() if velocity.length() > 5.0 else Vector2.ZERO
 			if dir == Vector2.ZERO:
 				var target := _nearest_enemy(reach)
@@ -323,7 +326,9 @@ func _fire_weapon(id: String) -> bool:
 					return false
 				dir = (target.global_position - global_position).normalized()
 			var center := global_position + dir * 20.0
-			if _damage_zone(center, 26.0, dmg) == 0:
+			var dug: int = game.terrain.destroy_in_radius(center, 18.0)
+			var hits := _damage_zone(center, 26.0, dmg)
+			if dug == 0 and hits == 0:
 				return false
 			game.spawn_slash(center, dir.angle(), Color(1.0, 0.75, 0.4), 0.7)
 	return true
