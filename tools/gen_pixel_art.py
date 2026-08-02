@@ -441,6 +441,27 @@ def gen_light(size: int = 128) -> list[list[tuple[int, int, int, int]]]:
     return px
 
 
+def gen_rock_atlas() -> list[list[tuple[int, int, int, int]]]:
+    """48x16 atlas: three 16x16 rock tile variants (deterministic speckling)."""
+    base = hex_rgba("#2a3b46")
+    dark = hex_rgba("#1c2a33")
+    lite = hex_rgba("#3d5260")
+    edge = hex_rgba("#15202a")
+    px = [[base for _ in range(48)] for _ in range(16)]
+    for y in range(16):
+        for x in range(48):
+            variant = x // 16
+            lx = x % 16
+            h = (lx * 29 + y * 13 + variant * 41) % 89
+            if lx in (0, 15) or y in (0, 15):
+                px[y][x] = edge
+            elif h < 12:
+                px[y][x] = dark
+            elif h < 20:
+                px[y][x] = lite
+    return px
+
+
 def gen_ring(size: int = 64) -> list[list[tuple[int, int, int, int]]]:
     """Thin cyan ring for the sonar pulse visual (scaled up at runtime)."""
     c = (size - 1) / 2.0
@@ -466,7 +487,8 @@ def main() -> None:
     write_png(os.path.join(OUT_DIR, "floor.png"), gen_floor())
     write_png(os.path.join(OUT_DIR, "light.png"), gen_light())
     write_png(os.path.join(OUT_DIR, "ring.png"), gen_ring())
-    print(f"Wrote {len(SPRITES) + 3} sprites to {os.path.normpath(OUT_DIR)}")
+    write_png(os.path.join(OUT_DIR, "rock.png"), gen_rock_atlas())
+    print(f"Wrote {len(SPRITES) + 4} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":

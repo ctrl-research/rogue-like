@@ -120,14 +120,18 @@ Milestone 0 ships Barbfish + Angler brute only.
   (melee, new plasma cutter), Driller (melee grinder, new seismic drill),
   Bomber (AoE burst, Mk2 charges), Echo (AoE pulse), Tinker (summoner).
 
-## Backlog (post-M4c)
+- **M5 — this PR** — procedurally generated destructible terrain: seeded
+  rock layouts (denser with depth) with guaranteed clearings + corridors,
+  server-authoritative destruction (drill digs fast, cutter chips, charges
+  crater, fauna chew through walls), projectiles blocked by rock.
+
+## Backlog (post-M5)
 
 ### Content
 
-- **Destructible terrain (planned)**: procedurally generated wreck/rock
-  layouts that can be dug through. The Driller's seismic drill is designed
-  to become the digging tool; walls/corridors also make lamp radius and
-  the melee archetypes matter much more.
+- Terrain follow-ups: rooms/wreck structures (not just noise caves), ore
+  pockets in rock that drop bonus salvage when dug, enemy dig variety
+  (burrowers that tunnel toward you).
 - More evolutions (drone/sonar/cutter/drill have none yet) and a second
   boss variety.
 

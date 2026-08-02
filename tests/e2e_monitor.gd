@@ -88,6 +88,11 @@ func _run_verified(min_elapsed: float) -> bool:
 	var player_count: int = cs.players.get_child_count()
 	var enemy_count: int = cs.enemies.get_child_count()
 	print("[e2e-%s] players=%d enemies=%d elapsed=%.1f" % [role, player_count, enemy_count, cs.elapsed])
+	if _phase == "run1":
+		# Terrain determinism fingerprint: both peers must have built the
+		# exact same rock count from the broadcast seed (compared by the
+		# orchestrating script).
+		print("[e2e-%s] terrain_cells=%d" % [role, cs.terrain_initial_cells])
 	if role == "host" and _phase == "run1":
 		# The client dives as the Lancer; its kit must exist on OUR copy of
 		# its player node (spawn-data meta replication).

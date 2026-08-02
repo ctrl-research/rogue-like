@@ -172,6 +172,12 @@ def main() -> None:
         sine_sweep(1.0, 80, 40, curve=1.2, vol=0.4),
     ))
 
+    # Rock dig: short gravelly crunch
+    write_wav("dig.wav", mix(
+        noise_burst(0.08, vol=0.55, lowpass=0.18, curve=2.0),
+        sine_sweep(0.08, 140, 70, vol=0.3),
+    ))
+
     # Oxygen warning: sharp double beep
     write_wav("warning.wav", seq(
         tone(0.09, 880, vol=0.4, curve=1.0),
@@ -189,7 +195,7 @@ def main() -> None:
         amb.append((prev * 2.2 + 0.05 * lfo) * swell * 0.5)
     write_wav("ambient.wav", amb)
 
-    print(f"Wrote 15 sfx to {os.path.normpath(OUT_DIR)}")
+    print(f"Wrote 16 sfx to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":

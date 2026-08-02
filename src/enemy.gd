@@ -38,11 +38,14 @@ var hp := 12.0:
 var contact_damage := 6.0
 var xp_value := 1
 
+const CHEW_TIME := 1.2  # seconds of pushing against rock before it gives
+
 var _ambushing := false
 var _stun_left := 0.0
 var _home := Vector2.ZERO
 var _last_pos := Vector2.ZERO
 var _idle_time := 0.0
+var _chew := 0.0
 
 
 func setup(new_kind: String, hp_scale: float) -> void:
@@ -152,8 +155,27 @@ func _server_tick(delta: float) -> void:
 		else:
 			velocity = Vector2.ZERO
 			return
-	velocity = (target.global_position - global_position).normalized() * speed
+	var dir := (target.global_position - global_position).normalized()
+	velocity = dir * speed
 	move_and_slide()
+	_chew_rock(dir, delta)
+
+
+## No pathfinding in the trench: fauna blocked by rock slowly eat through
+## it. Hiding in a drilled pocket buys time, not safety.
+func _chew_rock(dir: Vector2, delta: float) -> void:
+	var blocked := false
+	for i in get_slide_collision_count():
+		if get_slide_collision(i).get_collider() is TileMapLayer:
+			blocked = true
+			break
+	if not blocked:
+		_chew = 0.0
+		return
+	_chew += delta
+	if _chew >= CHEW_TIME:
+		_chew = 0.0
+		game.terrain.destroy_in_radius(global_position + dir * 12.0, 10.0)
 
 
 func _on_damage_tick() -> void:
