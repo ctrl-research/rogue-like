@@ -22,6 +22,8 @@ func _process(delta: float) -> void:
 
 func _explode() -> void:
 	_exploded = true
+	Sfx.play_at("explosion", global_position, -4.0)
+	Fx.shake_near(self, global_position, 280.0, 3.5)
 	$Mine.visible = false
 	$Flash.visible = true
 	$Flash.scale = Vector2(0.4, 0.4)

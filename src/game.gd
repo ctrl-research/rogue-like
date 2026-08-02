@@ -234,6 +234,7 @@ func _spawn_loot(data: Variant) -> Node:
 			node = CRATE_SCENE.instantiate()
 		"bell":
 			node = BELL_SCENE.instantiate()
+			Sfx.play("bell", -5.0, 0.0)  # spawn replicates: rings on every peer
 	node.position = data.pos
 	node.set("game", self)
 	return node

@@ -9,6 +9,8 @@ var radius := 85.0
 
 
 func _ready() -> void:
+	Sfx.play_at("sonar", global_position, -8.0)
+	Fx.shake_near(self, global_position, 200.0, 1.5)
 	$Ring.scale = Vector2.ONE * 0.15
 	var tween := create_tween()
 	tween.set_parallel(true)

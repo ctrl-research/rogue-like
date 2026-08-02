@@ -20,6 +20,7 @@ func _ready() -> void:
 	rotation = dir.angle()
 	$Sprite.modulate = tint
 	$Sprite.scale = sprite_scale
+	Sfx.play_at("shoot", global_position, -12.0)
 	set_deferred("monitoring", multiplayer.is_server())
 	if multiplayer.is_server():
 		body_entered.connect(_on_body_entered)

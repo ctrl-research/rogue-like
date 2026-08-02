@@ -20,6 +20,7 @@ boot_splash/bg_color=Color(0.016, 0.043, 0.086, 1)
 
 Net="*res://src/autoload/net.gd"
 Station="*res://src/autoload/station.gd"
+Sfx="*res://src/autoload/sfx.gd"
 
 [display]
 
