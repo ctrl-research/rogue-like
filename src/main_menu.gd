@@ -193,9 +193,45 @@ func _build() -> void:
 func _refresh_station() -> void:
 	if _station_rows == null:
 		return
-	_bank_label.text = "BANKED SALVAGE: %d" % Station.bank
+	_bank_label.text = "BANKED SALVAGE: %d  —  DIVING AS %s" % [
+		Station.bank, Divers.DIVERS[Station.diver].title]
 	for child in _station_rows.get_children():
 		child.queue_free()
+
+	var divers_header := Label.new()
+	divers_header.text = "DIVERS"
+	divers_header.add_theme_font_size_override("font_size", 8)
+	divers_header.modulate = Color(0.62, 0.9, 1.0)
+	_station_rows.add_child(divers_header)
+	for id in Divers.DIVERS:
+		var spec: Dictionary = Divers.DIVERS[id]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var info := Label.new()
+		info.text = "%s — %s" % [spec.title, spec.desc]
+		info.add_theme_font_size_override("font_size", 8)
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(info)
+		var btn := Button.new()
+		btn.add_theme_font_size_override("font_size", 8)
+		if Station.diver == id:
+			btn.text = "SELECTED"
+			btn.disabled = true
+		elif Station.diver_unlocked(id):
+			btn.text = "SELECT"
+			btn.pressed.connect(func() -> void: Station.select_diver(id))
+		else:
+			btn.text = "BUY %d" % int(spec.cost)
+			btn.disabled = not Station.can_buy_diver(id)
+			btn.pressed.connect(func() -> void: Station.buy_diver(id))
+		row.add_child(btn)
+		_station_rows.add_child(row)
+
+	var upgrades_header := Label.new()
+	upgrades_header.text = "UPGRADES"
+	upgrades_header.add_theme_font_size_override("font_size", 8)
+	upgrades_header.modulate = Color(0.62, 0.9, 1.0)
+	_station_rows.add_child(upgrades_header)
 	for id in Station.UPGRADES:
 		var spec: Dictionary = Station.UPGRADES[id]
 		var row := HBoxContainer.new()

@@ -113,15 +113,23 @@ Milestone 0 ships Barbfish + Angler brute only.
   drone swarm + sonar pulse weapons; weapon evolutions (Chain Harpoon,
   Solar Lance, Pressure Bomb) unlocked by maxed weapon + paired passive.
 
-## Backlog (post-M4a)
+- **M4b — done (PR #10)** — feel/polish: procedural SFX + underwater audio
+  bus, hit feedback (enemy hp sync), damage numbers, screen shake, bubbles.
+- **M4c — this PR** — unlockable divers, one per combat archetype, bought
+  with banked salvage: Salvager (ranged), Lancer (ranged pierce), Brawler
+  (melee, new plasma cutter), Driller (melee grinder, new seismic drill),
+  Bomber (AoE burst, Mk2 charges), Echo (AoE pulse), Tinker (summoner).
+
+## Backlog (post-M4c)
 
 ### Content
 
-- **Characters**: unlockable divers with distinct starting kits (bought with
-  salvage at the station).
-- **Procedural wreck layouts**: walls/rooms/corridors instead of an open
-  arena; light matters more in tight spaces.
-- More evolutions (drone/sonar have none yet) and a second boss variety.
+- **Destructible terrain (planned)**: procedurally generated wreck/rock
+  layouts that can be dug through. The Driller's seismic drill is designed
+  to become the digging tool; walls/corridors also make lamp radius and
+  the melee archetypes matter much more.
+- More evolutions (drone/sonar/cutter/drill have none yet) and a second
+  boss variety.
 
 ### Feel/polish pass
 

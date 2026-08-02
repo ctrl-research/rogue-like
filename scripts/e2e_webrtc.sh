@@ -78,6 +78,7 @@ FAIL=0
 grep -q "E2E_HOST_OK" "$OUT_DIR/host.log"             || { echo "MISSING E2E_HOST_OK"; FAIL=1; }
 grep -q "E2E_CLIENT_OK" "$OUT_DIR/client.log"         || { echo "MISSING E2E_CLIENT_OK"; FAIL=1; }
 grep -q "E2E_HOST_RETRY_OK" "$OUT_DIR/host.log"       || { echo "MISSING E2E_HOST_RETRY_OK"; FAIL=1; }
+grep -q "E2E_KIT_OK" "$OUT_DIR/host.log"              || { echo "MISSING E2E_KIT_OK"; FAIL=1; }
 grep -q "E2E_CLIENT_RETRY_OK" "$OUT_DIR/client.log"   || { echo "MISSING E2E_CLIENT_RETRY_OK"; FAIL=1; }
 # Script and replication errors mean sync is silently broken even if the
 # smoke markers pass — treat them as failures.
