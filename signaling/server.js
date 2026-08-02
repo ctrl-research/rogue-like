@@ -22,6 +22,7 @@
  *     {type:"offer"|"answer", id:<dest>, sdp:"..."}
  *     {type:"candidate", id:<dest>, mid:"...", index:N, name:"..."}
  *     {type:"seal"}                     host only: lock the room (no more joins)
+ *     {type:"unseal"}                   host only: reopen the room (post-game lobby)
  *   server -> client:
  *     {type:"id", id:<your id>, room:"<CODE>", host:<bool>}
  *     {type:"peer_connect", id:<peer>} / {type:"peer_disconnect", id:<peer>}
@@ -196,6 +197,15 @@ function handleSeal(ws) {
   log(`room ${ws.room} sealed`);
 }
 
+// Reopen a sealed room so the crew can regroup in the lobby after a run
+// (and new players can join between dives).
+function handleUnseal(ws) {
+  const room = ws.room ? rooms.get(ws.room) : null;
+  if (!room || ws.peerId !== HOST_ID) return; // only the host may unseal
+  room.sealed = false;
+  log(`room ${ws.room} unsealed`);
+}
+
 function handleClose(ws) {
   const code = ws.room;
   if (!code) return;
@@ -261,6 +271,8 @@ function handleMessage(ws, raw) {
         return relay(ws, msg);
       case "seal":
         return handleSeal(ws);
+      case "unseal":
+        return handleUnseal(ws);
       default:
         return closeWithError(ws, "unknown_type");
     }

@@ -25,6 +25,11 @@ var _downed_label: Label
 var _over_root: Control
 var _over_title: Label
 var _over_sub: Label
+var _over_station_btn: Button
+var _over_lobby_btn: Button
+var _over_disband_btn: Button
+var _over_leave_btn: Button
+var _over_wait: Label
 
 
 func _ready() -> void:
@@ -80,6 +85,14 @@ func _process(_delta: float) -> void:
 			_over_sub.text = "Banked %d salvage from depth %d." % [_game.banked_salvage, _game.depth]
 		else:
 			_over_sub.text = "The trench keeps what it takes — %d salvage lost at depth %d." % [_game.salvage_earned, _game.depth]
+		# Role-aware prompts: the host owns the room's fate; the crew stays
+		# together unless a member chooses to walk.
+		var online := Net.is_online
+		_over_station_btn.visible = not online
+		_over_lobby_btn.visible = online and multiplayer.is_server()
+		_over_disband_btn.visible = online and multiplayer.is_server()
+		_over_wait.visible = online and not multiplayer.is_server()
+		_over_leave_btn.visible = online and not multiplayer.is_server()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -306,10 +319,26 @@ func _build() -> void:
 	_over_sub = _label("", 10)
 	_over_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_over_sub)
-	var btn := Button.new()
-	btn.text = "RETURN TO STATION"
-	btn.pressed.connect(func() -> void: Net.leave())
-	box.add_child(btn)
+	_over_station_btn = Button.new()
+	_over_station_btn.text = "RETURN TO STATION"
+	_over_station_btn.pressed.connect(func() -> void: Net.leave())
+	box.add_child(_over_station_btn)
+	_over_lobby_btn = Button.new()
+	_over_lobby_btn.text = "BACK TO LOBBY — DIVE AGAIN"
+	_over_lobby_btn.pressed.connect(func() -> void: Net.return_to_lobby())
+	box.add_child(_over_lobby_btn)
+	_over_disband_btn = Button.new()
+	_over_disband_btn.text = "DISBAND CREW"
+	_over_disband_btn.pressed.connect(func() -> void: Net.close_room())
+	box.add_child(_over_disband_btn)
+	_over_wait = _label("the lead diver is deciding the crew's next move...", 8)
+	_over_wait.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_over_wait.modulate = Color(0.7, 0.8, 0.86)
+	box.add_child(_over_wait)
+	_over_leave_btn = Button.new()
+	_over_leave_btn.text = "LEAVE CREW"
+	_over_leave_btn.pressed.connect(func() -> void: Net.leave())
+	box.add_child(_over_leave_btn)
 
 
 func _label(text: String, size: int) -> Label:

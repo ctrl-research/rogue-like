@@ -21,7 +21,10 @@ const KINDS := {
 	"lurker": {"speed": 78.0, "hp": 25.0, "damage": 14.0, "xp": 3, "ambush": true},
 	"jelly": {"speed": 12.0, "hp": 45.0, "damage": 20.0, "xp": 2},
 	"jelly_small": {"speed": 30.0, "hp": 10.0, "damage": 8.0, "xp": 1, "scale": 0.6},
-	"maw": {"speed": 18.0, "hp": 480.0, "damage": 30.0, "xp": 10, "scale": 1.25},
+	# Leashed: the Maw guards the salvage zone it spawned in and returns home
+	# rather than chasing across the map — crates spawn >= 220px from the
+	# arena center, so it can never end up camping the dive bell.
+	"maw": {"speed": 18.0, "hp": 480.0, "damage": 30.0, "xp": 10, "scale": 1.25, "leash": 170.0},
 }
 
 const AMBUSH_RANGE := 110.0
@@ -36,6 +39,7 @@ var xp_value := 1
 
 var _ambushing := false
 var _stun_left := 0.0
+var _home := Vector2.ZERO
 var _last_pos := Vector2.ZERO
 var _idle_time := 0.0
 
@@ -54,6 +58,7 @@ func setup(new_kind: String, hp_scale: float) -> void:
 
 func _ready() -> void:
 	add_to_group("enemies")
+	_home = global_position
 	_last_pos = global_position
 	if multiplayer.is_server():
 		$DamageTimer.timeout.connect(_on_damage_tick)
@@ -94,6 +99,19 @@ func _server_tick(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 	var target := _nearest_player()
+	var leash: float = KINDS[kind].get("leash", 0.0)
+	if leash > 0.0:
+		# Zone guardian: only chase divers inside the home radius; otherwise
+		# swim back to the post.
+		if target != null and _home.distance_to(target.global_position) > leash:
+			target = null
+		if target == null:
+			if global_position.distance_to(_home) > 8.0:
+				velocity = (_home - global_position).normalized() * speed
+				move_and_slide()
+			else:
+				velocity = Vector2.ZERO
+			return
 	if target == null:
 		velocity = Vector2.ZERO
 		return

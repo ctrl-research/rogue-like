@@ -13,6 +13,7 @@ extends Node
 signal status_changed(text: String)
 signal player_count_changed
 signal entered_lobby(room_code: String, is_host: bool)
+signal session_ended  # emitted when the session dies while sitting in a menu/lobby
 
 enum Mode { OFFLINE, ENET, WEBRTC }
 
@@ -125,7 +126,10 @@ func join_lan(address: String) -> Error:
 # --- Shared lifecycle --------------------------------------------------------
 
 
-## Host only: lock the lobby and move everyone into the game scene.
+## Host only: lock the lobby and move everyone into the game scene. The host
+## loads its own scene FIRST and only then tells clients: their game scene's
+## ready-handshake rpc targets /root/Game on the server, and Godot drops
+## rpcs whose target node doesn't exist yet.
 func start_dive() -> void:
 	if not multiplayer.is_server():
 		return
@@ -135,7 +139,56 @@ func start_dive() -> void:
 				multiplayer.multiplayer_peer.refuse_new_connections = true
 		Mode.WEBRTC:
 			_signaling.seal()
+	_change_to_game()
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_rpc_change_to_game.rpc()
+
+
+## Host only: bring the whole crew back to the lobby after a run. The room
+## stays open (and reopens to new joiners) until the host disbands it.
+func return_to_lobby() -> void:
+	if not multiplayer.is_server():
+		return
+	await _despawn_game_nodes()
+	match mode:
+		Mode.ENET:
+			if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
+				multiplayer.multiplayer_peer.refuse_new_connections = false
+		Mode.WEBRTC:
+			_signaling.unseal()
+	_rpc_return_to_lobby.rpc()
+
+
+## Host only: close the room for everyone.
+func close_room() -> void:
+	if not multiplayer.is_server():
+		return
+	await _despawn_game_nodes()
+	_rpc_room_closed.rpc()
+	# Let the rpc flush before tearing down the transport.
+	await get_tree().create_timer(0.3).timeout
+	leave()
+
+
+## Replicate despawns for all game nodes while every peer still has the
+## game scene, so the scene change that follows is silent on the network.
+func _despawn_game_nodes() -> void:
+	var cs := get_tree().current_scene
+	if cs != null and cs.has_method("despawn_all"):
+		cs.despawn_all()
+		await get_tree().create_timer(0.25).timeout
+
+
+@rpc("authority", "call_local", "reliable")
+func _rpc_return_to_lobby() -> void:
+	in_game = false
+	get_tree().change_scene_to_file(MENU_SCENE)
+
+
+@rpc("authority", "reliable")
+func _rpc_room_closed() -> void:
+	leave()
 
 
 ## Leave the current session (or game-over screen) and return to the menu.
@@ -148,7 +201,7 @@ func player_count() -> int:
 	return multiplayer.get_peers().size() + 1
 
 
-@rpc("authority", "call_local", "reliable")
+@rpc("authority", "reliable")
 func _rpc_change_to_game() -> void:
 	_change_to_game()
 
@@ -193,4 +246,5 @@ func _on_server_disconnected() -> void:
 	if was_in_game:
 		leave()
 	else:
-		status_changed.emit("Host disconnected.")
+		status_changed.emit("The host closed the room.")
+		session_ended.emit()
