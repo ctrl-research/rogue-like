@@ -1,9 +1,12 @@
-# Signaling broker
+# Signaling hub
 
 Tiny WebSocket broker that sets up WebRTC connections between players (the
 offer/answer/ICE handshake), then steps aside — all game traffic flows
 peer-to-peer and never touches this server. Vendored from the `fps` project;
-the protocol matches Godot's official `webrtc_signaling` demo.
+the protocol matches Godot's official `webrtc_signaling` demo, extended with
+a per-game namespace (`game` field on join) so one hub can serve multiple
+games without room codes colliding. Production endpoint: `wss://lobby.j6n.dev`
+(game id for this project: `abyssal`).
 
 Protocol, limits, and abuse guards are documented at the top of `server.js`.
 Everything is env-tunable (`PORT`, `MAX_PEERS`, `ALLOWED_ORIGINS`, ...).
