@@ -45,6 +45,7 @@ const MAX_PEERS = intEnv("MAX_PEERS", 10);
 const MAX_MESSAGE_BYTES = intEnv("MAX_MESSAGE_BYTES", 32768);
 // Bound resource use per source IP and globally.
 const MAX_CONNECTIONS_PER_IP = intEnv("MAX_CONNECTIONS_PER_IP", 20);
+const MAX_CLIENTS = intEnv("MAX_CLIENTS", 500);
 const MAX_ROOMS = intEnv("MAX_ROOMS", 1000);
 // Per-connection flood guard and idle-without-joining cutoff.
 const MAX_MESSAGES_PER_SEC = intEnv("MAX_MESSAGES_PER_SEC", 30);
@@ -81,10 +82,19 @@ function closeWithError(ws, reason) {
 }
 
 function clientIp(req) {
-  // Behind a reverse proxy, the real client IP is in X-Forwarded-For.
+  // Cloudflare sets CF-Connecting-IP itself; it cannot be spoofed by the
+  // client when traffic comes through the tunnel.
+  const cf = req.headers["cf-connecting-ip"];
+  if (cf) {
+    return String(cf).trim();
+  }
+  // Fall back to the LAST X-Forwarded-For entry: proxies append, so the
+  // last hop was written by our own edge. The first entry is
+  // client-supplied and would let an attacker dodge per-IP limits.
   const forwarded = req.headers["x-forwarded-for"];
   if (forwarded) {
-    return String(forwarded).split(",")[0].trim();
+    const hops = String(forwarded).split(",");
+    return hops[hops.length - 1].trim();
   }
   return (req.socket && req.socket.remoteAddress) || "unknown";
 }
@@ -289,6 +299,10 @@ const wss = new WebSocketServer({
 });
 
 wss.on("connection", (ws, req) => {
+  // Global cap: refuse cleanly well before memory pressure kills the pod.
+  if (wss.clients.size > MAX_CLIENTS) {
+    return closeWithError(ws, "server_full");
+  }
   const ip = clientIp(req);
   const current = connectionsByIp.get(ip) || 0;
   if (current >= MAX_CONNECTIONS_PER_IP) {
