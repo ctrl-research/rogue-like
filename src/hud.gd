@@ -22,6 +22,9 @@ var _offer_box: VBoxContainer
 var _offer_row: HBoxContainer
 var _downed_dim: ColorRect
 var _downed_label: Label
+var _hurt_dim: ColorRect
+var _prev_hp := -1.0
+var _warn_cd := 0.0
 var _over_root: Control
 var _over_title: Label
 var _over_sub: Label
@@ -47,6 +50,12 @@ func _process(_delta: float) -> void:
 		_hp_bar.max_value = _local.max_hp
 		_hp_bar.value = _local.hp
 		_gear_label.text = _gear_summary()
+		# Hurt vignette pulse on any local hp drop.
+		if _prev_hp >= 0.0 and _local.hp < _prev_hp and not _game.game_over:
+			_hurt_dim.modulate.a = 1.0
+			var tween := _hurt_dim.create_tween()
+			tween.tween_property(_hurt_dim, "modulate:a", 0.0, 0.35)
+		_prev_hp = _local.hp
 
 	var local_downed: bool = _local != null and _local.downed and not _game.game_over
 	_downed_dim.visible = local_downed
@@ -55,6 +64,11 @@ func _process(_delta: float) -> void:
 	var o2: float = _game.oxygen
 	_o2_label.text = "O2 %d:%02d" % [int(o2) / 60, int(o2) % 60]
 	_o2_label.modulate = Color(1.0, 0.35, 0.3) if o2 < 30.0 else Color(0.62, 0.9, 1.0)
+	if o2 < 30.0 and not _game.game_over:
+		_warn_cd -= get_process_delta_time()
+		if _warn_cd <= 0.0:
+			_warn_cd = 5.0
+			Sfx.play("warning", -8.0, 0.0)
 	_time_label.text = "T %d:%02d" % [int(_game.elapsed) / 60, int(_game.elapsed) % 60]
 	_salvage_label.text = "SALVAGE %d/%d" % [GameRules.CRATE_COUNT - _game.crates_left, GameRules.CRATE_COUNT]
 	_depth_label.text = "DEPTH %d   HAUL %d" % [_game.depth, _game.salvage_earned]
@@ -78,6 +92,7 @@ func _process(_delta: float) -> void:
 		_extract_label.visible = false
 
 	if _game.game_over and not _over_root.visible:
+		Sfx.play("extract" if _game.victory else "defeat", -4.0, 0.0)
 		_over_root.visible = true
 		_over_title.text = "DIVE COMPLETE" if _game.victory else "LOST TO THE DEEP"
 		_over_title.modulate = Color(0.55, 1.0, 0.75) if _game.victory else Color(1.0, 0.4, 0.35)
@@ -114,6 +129,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _on_offer(options: Array) -> void:
+	Sfx.play("levelup", -6.0, 0.0)
 	_current_offer = options
 	for child in _offer_row.get_children():
 		child.queue_free()
@@ -250,6 +266,13 @@ func _build() -> void:
 	_downed_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_downed_dim.visible = false
 	root.add_child(_downed_dim)
+
+	_hurt_dim = ColorRect.new()
+	_hurt_dim.color = Color(0.6, 0.06, 0.06, 0.28)
+	_hurt_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_hurt_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hurt_dim.modulate.a = 0.0
+	root.add_child(_hurt_dim)
 	_downed_label = _label("DOWNED — a teammate can revive you", 12)
 	_downed_label.set_anchors_preset(Control.PRESET_CENTER)
 	_downed_label.position = Vector2(-130, -40)

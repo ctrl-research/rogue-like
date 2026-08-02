@@ -33,7 +33,8 @@ const LURKER_HIDDEN_ALPHA := 0.35
 var kind := "barbfish"
 var game  # the Game node; untyped to avoid a class_name dependency cycle
 var speed := 42.0
-var hp := 12.0
+var hp := 12.0:
+	set = _set_hp
 var contact_damage := 6.0
 var xp_value := 1
 
@@ -60,8 +61,38 @@ func _ready() -> void:
 	add_to_group("enemies")
 	_home = global_position
 	_last_pos = global_position
+	tree_exiting.connect(_on_exiting)
 	if multiplayer.is_server():
 		$DamageTimer.timeout.connect(_on_damage_tick)
+
+
+## Hit feedback on every peer: hp replicates on change, so the setter fires
+## locally wherever damage lands — no extra rpcs.
+func _set_hp(value: float) -> void:
+	var old := hp
+	hp = value
+	if not is_node_ready() or value >= old:
+		return
+	Fx.damage_number(self, global_position, old - value)
+	Sfx.play_at("hit", global_position, -10.0)
+	$Sprite.self_modulate = Color(1.0, 0.4, 0.4)
+	$Sprite.scale = Vector2(1.15, 1.15)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property($Sprite, "self_modulate", Color.WHITE, 0.15)
+	tween.tween_property($Sprite, "scale", Vector2.ONE, 0.12)
+
+
+func _on_exiting() -> void:
+	# Death (and site-clear) feedback: despawns replicate, so this pops on
+	# every peer without extra sync.
+	if game == null or game.game_over or not is_inside_tree():
+		return
+	Fx.poof(game, global_position, Color(0.75, 0.45, 0.6))
+	Sfx.play_at("kill", global_position, -8.0)
+	if kind == "maw":
+		Sfx.play_at("explosion", global_position, -2.0)
+		Fx.shake_near(game, global_position, 420.0, 5.0)
 
 
 func _physics_process(delta: float) -> void:

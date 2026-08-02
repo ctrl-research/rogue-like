@@ -34,7 +34,8 @@ var game  # the Game node; untyped to avoid a class_name dependency cycle
 
 var move_speed := BASE_SPEED
 var max_hp := BASE_MAX_HP
-var hp := BASE_MAX_HP
+var hp := BASE_MAX_HP:
+	set = _set_hp
 var dead := false:
 	set = _set_dead
 var downed := false:
@@ -48,6 +49,7 @@ var _cooldowns := {}
 var _pending_offers: Array = []  # server-only queue of offers (Array[Array])
 var _pickup_shape: CircleShape2D
 var _drones: Array[Sprite2D] = []
+var _shake := 0.0
 
 
 func _enter_tree() -> void:
@@ -58,7 +60,9 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
-	$Camera.enabled = _is_local()
+	add_to_group("players")
+	$Camera.enabled = is_local()
+	_add_bubbles()
 	$Sprite.self_modulate = TINTS[player_index % TINTS.size()]
 	$NameLabel.text = display_name()
 	$Camera.limit_left = 0
@@ -80,10 +84,16 @@ func _physics_process(delta: float) -> void:
 	$ReviveBar.visible = downed
 	$ReviveBar.value = revive_progress
 
+	if _shake > 0.05:
+		_shake = lerpf(_shake, 0.0, minf(10.0 * delta, 1.0))
+		$Camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
+	elif $Camera.offset != Vector2.ZERO:
+		$Camera.offset = Vector2.ZERO
+
 	if game == null or game.game_over or dead:
 		return
 
-	if _is_local():
+	if is_local():
 		velocity = Vector2.ZERO
 		if not downed:
 			velocity = Input.get_vector("move_left", "move_right", "move_up", "move_down") * move_speed
@@ -378,8 +388,47 @@ func _on_pickup(area: Area2D) -> void:
 # --- State visuals (run on every peer via synced setters) ------------------
 
 
-func _is_local() -> bool:
+func is_local() -> bool:
 	return peer_id == multiplayer.get_unique_id()
+
+
+## Kick the local camera (decays automatically).
+func shake(amount: float) -> void:
+	if is_local():
+		_shake = maxf(_shake, amount)
+
+
+func _set_hp(value: float) -> void:
+	var old := hp
+	hp = value
+	if not is_node_ready() or value >= old or dead:
+		return
+	# Hurt feedback: hp replicates, so this runs on every peer; the shake
+	# and heavy sound only land for the diver who owns the pain.
+	if is_local():
+		shake(3.0)
+		Sfx.play("hit", -4.0, 0.15)
+	else:
+		Sfx.play_at("hit", global_position, -12.0)
+
+
+func _add_bubbles() -> void:
+	var bubbles := CPUParticles2D.new()
+	bubbles.amount = 5
+	bubbles.lifetime = 1.8
+	bubbles.preprocess = 1.0
+	bubbles.emission_shape = CPUParticles2D.EMISSION_SHAPE_SPHERE
+	bubbles.emission_sphere_radius = 5.0
+	bubbles.direction = Vector2.UP
+	bubbles.spread = 15.0
+	bubbles.initial_velocity_min = 10.0
+	bubbles.initial_velocity_max = 22.0
+	bubbles.gravity = Vector2(0, -20)
+	bubbles.scale_amount_min = 0.6
+	bubbles.scale_amount_max = 1.4
+	bubbles.color = Color(0.75, 0.92, 1.0, 0.30)
+	bubbles.position = Vector2(0, -6)
+	add_child(bubbles)
 
 
 func _set_dead(value: bool) -> void:
@@ -391,8 +440,17 @@ func _set_dead(value: bool) -> void:
 
 
 func _set_downed(value: bool) -> void:
+	var was := downed
 	downed = value
 	if not is_node_ready():
 		return
 	$Sprite.rotation = -PI / 2 if value else 0.0
 	$Sprite.modulate = Color(1.0, 0.55, 0.55, 0.9) if value else Color.WHITE
+	if value and not was:
+		if is_local():
+			Sfx.play("downed", -4.0, 0.0)
+			shake(4.0)
+		else:
+			Sfx.play_at("downed", global_position, -10.0)
+	elif was and not value:
+		Sfx.play_at("revive", global_position, -6.0)
