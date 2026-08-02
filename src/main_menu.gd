@@ -23,10 +23,17 @@ func _ready() -> void:
 	Net.status_changed.connect(func(text: String) -> void: _status.text = text)
 	Net.player_count_changed.connect(_refresh_lobby)
 	Net.entered_lobby.connect(_on_entered_lobby)
+	Net.session_ended.connect(_on_session_ended)
 	Station.changed.connect(_refresh_station)
 	_build()
 	_refresh_station()
-	_try_auto_join_from_url()
+	if Net.is_online:
+		# Returning from a run with the session still alive: straight back
+		# into the crew lobby (shop, regroup, dive again).
+		_on_entered_lobby(Net.room_code, multiplayer.is_server())
+		_status.text = "Back at the station — spend salvage, then dive again."
+	else:
+		_try_auto_join_from_url()
 
 
 func _build() -> void:
@@ -115,26 +122,6 @@ func _build() -> void:
 		join_lan.pressed.connect(func() -> void: Net.join_lan(_address.text))
 		lan_row.add_child(join_lan)
 
-	_menu_box.add_child(HSeparator.new())
-	var station_toggle := Button.new()
-	station_toggle.text = "STATION UPGRADES"
-	station_toggle.toggle_mode = true
-	station_toggle.toggled.connect(func(on: bool) -> void: _station_box.visible = on)
-	_menu_box.add_child(station_toggle)
-
-	_station_box = VBoxContainer.new()
-	_station_box.add_theme_constant_override("separation", 4)
-	_station_box.visible = false
-	_menu_box.add_child(_station_box)
-	_bank_label = Label.new()
-	_bank_label.add_theme_font_size_override("font_size", 10)
-	_bank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_bank_label.modulate = Color(0.95, 0.85, 0.4)
-	_station_box.add_child(_bank_label)
-	_station_rows = VBoxContainer.new()
-	_station_rows.add_theme_constant_override("separation", 2)
-	_station_box.add_child(_station_rows)
-
 	_lobby_box = VBoxContainer.new()
 	_lobby_box.add_theme_constant_override("separation", 6)
 	_lobby_box.visible = false
@@ -171,6 +158,28 @@ func _build() -> void:
 	leave.text = "LEAVE"
 	leave.pressed.connect(func() -> void: Net.leave())
 	_lobby_box.add_child(leave)
+
+	# Station shopping is available on the title screen AND in the crew
+	# lobby between dives — that's when the banked salvage burns a hole.
+	box.add_child(HSeparator.new())
+	var station_toggle := Button.new()
+	station_toggle.text = "STATION UPGRADES"
+	station_toggle.toggle_mode = true
+	station_toggle.toggled.connect(func(on: bool) -> void: _station_box.visible = on)
+	box.add_child(station_toggle)
+
+	_station_box = VBoxContainer.new()
+	_station_box.add_theme_constant_override("separation", 4)
+	_station_box.visible = false
+	box.add_child(_station_box)
+	_bank_label = Label.new()
+	_bank_label.add_theme_font_size_override("font_size", 10)
+	_bank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bank_label.modulate = Color(0.95, 0.85, 0.4)
+	_station_box.add_child(_bank_label)
+	_station_rows = VBoxContainer.new()
+	_station_rows.add_theme_constant_override("separation", 2)
+	_station_box.add_child(_station_rows)
 
 	_status = Label.new()
 	_status.add_theme_font_size_override("font_size", 9)
@@ -229,6 +238,12 @@ func _on_entered_lobby(room: String, is_host: bool) -> void:
 
 func _refresh_lobby() -> void:
 	_divers.text = "divers ready: %d / %d" % [Net.player_count(), Net.MAX_PLAYERS]
+
+
+func _on_session_ended() -> void:
+	_lobby_box.visible = false
+	_menu_box.visible = true
+	_copy_btn.visible = false
 
 
 func _build_share_url(room: String) -> String:

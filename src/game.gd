@@ -179,6 +179,16 @@ func _spawn_loot_deferred(kind: String, pos: Vector2) -> void:
 		_bell = node as Area2D
 
 
+## Server: free every spawner-tracked node so despawns replicate while all
+## peers still have the game scene. Called before leaving the scene — a raw
+## scene change would race the despawn broadcasts against clients' own
+## teardown and spray ERR_UNAUTHORIZED on their side.
+func despawn_all() -> void:
+	for holder: Node2D in [players, enemies, loot, projectiles]:
+		for child in holder.get_children():
+			child.queue_free()
+
+
 func on_player_downed(p: Player) -> void:
 	if _active_players().is_empty():
 		_finish(false)

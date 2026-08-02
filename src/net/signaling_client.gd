@@ -76,6 +76,11 @@ func seal() -> void:
 	_send({"type": "seal"})
 
 
+## Host only: reopen the room for the post-game lobby.
+func unseal() -> void:
+	_send({"type": "unseal"})
+
+
 func _process(_delta: float) -> void:
 	if not _active:
 		return
