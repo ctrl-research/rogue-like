@@ -25,6 +25,14 @@ const DESCEND_O2_BONUS := 90.0  # partial tank top-up per descent
 const CRATE_SALVAGE_BASE := 5  # salvage per crate, multiplied by depth
 const NUGGET_SALVAGE_BASE := 1  # salvage per mined ore nugget, times depth
 
+# Mini quests: every depth rolls one from the pool; completing it summons the
+# bell. Depth 1 is always crates (it teaches the loop). Deeper depths draw
+# from a shuffled bag so a run never repeats a quest before seeing them all.
+const QUEST_KINDS: Array[String] = ["crates", "swarm", "hunt"]
+const SWARM_TIME := 70.0  # seconds the crew must outlast the swarm
+const SWARM_SPAWN_SCALE := 0.5  # spawn-interval multiplier during the swarm
+const QUEST_REWARD_BASE := 20  # swarm/hunt completion salvage, times depth
+
 
 static func xp_needed(level: int) -> int:
 	return 4 + level * 3
@@ -36,6 +44,10 @@ static func crate_value(depth: int) -> int:
 
 static func nugget_value(depth: int) -> int:
 	return NUGGET_SALVAGE_BASE * depth
+
+
+static func quest_reward(depth: int) -> int:
+	return QUEST_REWARD_BASE * depth
 
 
 static func depth_hp_scale(depth: int) -> float:

@@ -193,8 +193,8 @@ func _build() -> void:
 func _refresh_station() -> void:
 	if _station_rows == null:
 		return
-	_bank_label.text = "BANKED SALVAGE: %d  —  DIVING AS %s" % [
-		Station.bank, Divers.DIVERS[Station.diver].title]
+	_bank_label.text = "DAY %d  —  BANKED SALVAGE: %d  —  DIVING AS %s" % [
+		Station.day, Station.bank, Divers.DIVERS[Station.diver].title]
 	for child in _station_rows.get_children():
 		child.queue_free()
 

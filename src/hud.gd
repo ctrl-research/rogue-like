@@ -2,13 +2,16 @@ extends CanvasLayer
 ## In-run HUD. Reads mirrored state off the Game node every frame; all
 ## controls are built in code so the scene file stays trivial.
 
+# Compass points for the hunt quest's bearing, clockwise from +X (y-down).
+const BEARINGS: Array[String] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"]
+
 var _game  # the Game node; untyped for dynamic access to its mirrored state
 var _local: Player  # this peer's diver, once spawned
 var _current_offer: Array = []
 var _hp_bar: ProgressBar
 var _o2_label: Label
 var _time_label: Label
-var _salvage_label: Label
+var _objective_label: Label
 var _xp_bar: ProgressBar
 var _level_label: Label
 var _toast: Label
@@ -70,7 +73,7 @@ func _process(_delta: float) -> void:
 			_warn_cd = 5.0
 			Sfx.play("warning", -8.0, 0.0)
 	_time_label.text = "T %d:%02d" % [int(_game.elapsed) / 60, int(_game.elapsed) % 60]
-	_salvage_label.text = "SALVAGE %d/%d" % [GameRules.CRATE_COUNT - _game.crates_left, GameRules.CRATE_COUNT]
+	_objective_label.text = _objective_text()
 	_depth_label.text = "DEPTH %d   HAUL %d" % [_game.depth, _game.salvage_earned]
 	_xp_bar.max_value = _game.xp_needed
 	_xp_bar.value = _game.team_xp
@@ -162,6 +165,34 @@ func _rank_text(id: String) -> String:
 	return "Lv %d > %d" % [lvl, lvl + 1]
 
 
+## The quest line in the top-right corner, per this depth's objective.
+func _objective_text() -> String:
+	if _game.quest_done:
+		return "GET TO THE BELL"
+	match _game.quest_kind:
+		"swarm":
+			var left := int(ceilf(_game.quest_progress))
+			return "SURVIVE %d:%02d" % [left / 60, left % 60]
+		"hunt":
+			return "HUNT THE BEAST%s" % _beast_bearing()
+		_:
+			return "SALVAGE %d/%d" % [GameRules.CRATE_COUNT - _game.crates_left, GameRules.CRATE_COUNT]
+
+
+## Compass bearing + range to the quarry, from this peer's replicated enemies.
+func _beast_bearing() -> String:
+	if _local == null:
+		return ""
+	for e in _game.enemies.get_children():
+		if e is Enemy and e.kind == "beast":
+			var offset: Vector2 = e.global_position - _local.global_position
+			var dist := int(offset.length() / Terrain.CELL)
+			if dist < 8:
+				return " — IT'S HERE"
+			return " %s %dm" % [BEARINGS[wrapi(roundi(offset.angle() / (TAU / 8.0)), 0, 8)], dist]
+	return ""
+
+
 func _gear_summary() -> String:
 	var parts := PackedStringArray()
 	for id in _local.weapons:
@@ -213,11 +244,13 @@ func _build() -> void:
 	_time_label.position = Vector2(-16, 26)
 	root.add_child(_time_label)
 
-	_salvage_label = _label("SALVAGE 0/6", 10)
-	_salvage_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_salvage_label.position = Vector2(-104, 8)
-	_salvage_label.modulate = Color(0.95, 0.85, 0.4)
-	root.add_child(_salvage_label)
+	_objective_label = _label("SALVAGE 0/6", 10)
+	_objective_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_objective_label.position = Vector2(-176, 8)
+	_objective_label.size = Vector2(168, 14)
+	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_objective_label.modulate = Color(0.95, 0.85, 0.4)
+	root.add_child(_objective_label)
 
 	_depth_label = _label("DEPTH 1   HAUL 0", 8)
 	_depth_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)

@@ -163,9 +163,11 @@ Milestone 0 ships Barbfish + Angler brute only.
   digging out an ore cell shakes loose a salvage nugget worth depth-scaled
   bonus salvage — any destruction counts (mining, drill, charges, fauna
   chewing).
-- **M7 — planned** — quest system: each depth rolls its mini quest from a
-  pool (crate recovery + the first two new types: survive the swarm, hunt
-  the beast); day counter on the station screen ("Day N").
+- **M7 — this PR** — quest system: each depth rolls its mini quest from a
+  shuffled bag (depth 1 always teaches crate recovery; deeper depths mix in
+  the first two new types: survive the swarm, hunt the beast — a leashed
+  alpha lurker tracked by sonar pings and a HUD bearing); completing the
+  quest drops the bell; day counter persists at the station ("Day N").
 - **M7b — planned** — quest pack 2: repair & defend, escort the payload.
 - **M8 — planned** — boss lairs every 5th depth with a dedicated boss, and
   buyable start-depth checkpoints (winch refit) sold at the station after

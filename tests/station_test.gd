@@ -46,6 +46,14 @@ func _ready() -> void:
 	Station.load_data()
 	_check(Station.diver_unlocked("lancer"), "diver unlock survives save/load")
 
+	# Days: each dive turns the calendar, and it persists.
+	var day_before := Station.day
+	Station.advance_day()
+	_check(Station.day == day_before + 1, "advance_day increments")
+	Station.day = 1
+	Station.load_data()
+	_check(Station.day == day_before + 1, "day survives save/load")
+
 	if _failures.is_empty():
 		print("STATION_TEST_OK")
 		get_tree().quit(0)
