@@ -36,6 +36,36 @@ The theme earns its mechanics:
    deeper, harder, better rewards, same oxygen tank).
 6. Wipe or oxygen-out = lose unbanked salvage. Extract = fund station upgrades.
 
+## The long game — sub, days, descent (planned direction)
+
+The dive station grows into a **submarine**: the crew's homebase, hovering
+over the trench. The loop above stays the heartbeat; this gives it a life
+around it.
+
+- **The sub is home.** Between dives the crew is aboard the sub — a small
+  walkable 2D interior with the salvage stash, upgrade console, diver
+  locker, and dive hatch. The interior *is* the multiplayer lobby: the crew
+  physically gathers aboard before diving. Current menus stand in only
+  until its milestone ships.
+- **Each dive is a day.** A day counter ticks per dive and frames the
+  campaign ("Day 14 — depth record 11"). Days are the hook for future
+  events, story beats, and pacing.
+- **Every stage rolls a mini quest.** Completing it summons the bell and
+  unlocks the descent. Quest pool: crate recovery (the classic), hunt the
+  beast (track a named elite via sonar pings), survive the swarm (timed
+  onslaught), repair & defend (hold a wreck position through waves),
+  escort the payload (tow a heavy artifact — carrier slowed and targeted).
+  Deeper stages roll harder quest variants.
+- **Boss lairs every 5th depth.** Depths 5, 10, 15… are dedicated boss
+  stages — no quest, just the lair's guardian between the crew and the
+  descent, with a big guaranteed haul. The Trench Maw stays the crate-quest
+  miniboss; lairs get their own monsters.
+- **Buyable checkpoints.** Clearing a boss lair lets the crew buy a
+  start-depth unlock (winch + pressure-hull refit) with banked salvage, so
+  future dives may begin below that lair. Runs are still descend-or-die —
+  the checkpoint is bought progress, not free progress — and hoarding
+  resources on the sub finally has a purpose beyond stat upgrades.
+
 ## Multiplayer design
 
 - 2–4 player **co-op PvE**, drop-in lobby before the dive.
@@ -128,10 +158,20 @@ Milestone 0 ships Barbfish + Angler brute only.
 - **M5.1 — done (PR #13)** — universal mining: any diver pushing into rock
   mines it slowly; mining pauses your weapons ("hands full") unless you
   carry the seismic drill, whose crews work and shoot at once.
-- **M6 — this PR** — ore pockets: seeded gold seams buried in rock (richer
-  with depth, deterministic on every peer like the rock itself); digging
-  out an ore cell shakes loose a salvage nugget worth depth-scaled bonus
-  salvage — any destruction counts (mining, drill, charges, fauna chewing).
+- **M6 — done (PR #14)** — ore pockets: seeded gold seams buried in rock
+  (richer with depth, deterministic on every peer like the rock itself);
+  digging out an ore cell shakes loose a salvage nugget worth depth-scaled
+  bonus salvage — any destruction counts (mining, drill, charges, fauna
+  chewing).
+- **M7 — planned** — quest system: each depth rolls its mini quest from a
+  pool (crate recovery + the first two new types: survive the swarm, hunt
+  the beast); day counter on the station screen ("Day N").
+- **M7b — planned** — quest pack 2: repair & defend, escort the payload.
+- **M8 — planned** — boss lairs every 5th depth with a dedicated boss, and
+  buyable start-depth checkpoints (winch refit) sold at the station after
+  a lair is cleared.
+- **M9 — planned** — the submarine: walkable interior homebase that doubles
+  as the multiplayer lobby (stash, upgrade console, diver locker, hatch).
 
 ## Backlog (post-M6)
 
@@ -139,8 +179,8 @@ Milestone 0 ships Barbfish + Angler brute only.
 
 - Terrain follow-ups: rooms/wreck structures (not just noise caves), enemy
   dig variety (burrowers that tunnel toward you).
-- More evolutions (drone/sonar/cutter/drill have none yet) and a second
-  boss variety.
+- More evolutions (drone/sonar/cutter/drill have none yet); more boss
+  varieties beyond the first lair guardian (M8).
 
 ### Feel/polish pass
 
