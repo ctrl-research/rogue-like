@@ -85,6 +85,12 @@ CC="$(grep -oE 'terrain_cells=[0-9]+' "$OUT_DIR/client.log" | head -1 | cut -d= 
 if [ -z "$HC" ] || [ "$HC" = "0" ] || [ "$HC" != "$CC" ]; then
   echo "TERRAIN FINGERPRINT MISMATCH: host=$HC client=$CC"; FAIL=1
 fi
+# Same for the ore seams scattered through it.
+HO="$(grep -oE 'ore_cells=[0-9]+' "$OUT_DIR/host.log" | head -1 | cut -d= -f2)"
+CO="$(grep -oE 'ore_cells=[0-9]+' "$OUT_DIR/client.log" | head -1 | cut -d= -f2)"
+if [ -z "$HO" ] || [ "$HO" = "0" ] || [ "$HO" != "$CO" ]; then
+  echo "ORE FINGERPRINT MISMATCH: host=$HO client=$CO"; FAIL=1
+fi
 grep -q "E2E_CLIENT_RETRY_OK" "$OUT_DIR/client.log"   || { echo "MISSING E2E_CLIENT_RETRY_OK"; FAIL=1; }
 # Script and replication errors mean sync is silently broken even if the
 # smoke markers pass — treat them as failures.

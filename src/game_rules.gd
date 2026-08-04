@@ -23,6 +23,7 @@ const BLEED_TIME := 45.0  # seconds until a downed diver bleeds out
 const DECISION_TIME := 12.0  # seconds the host has to pick extract/descend
 const DESCEND_O2_BONUS := 90.0  # partial tank top-up per descent
 const CRATE_SALVAGE_BASE := 5  # salvage per crate, multiplied by depth
+const NUGGET_SALVAGE_BASE := 1  # salvage per mined ore nugget, times depth
 
 
 static func xp_needed(level: int) -> int:
@@ -31,6 +32,10 @@ static func xp_needed(level: int) -> int:
 
 static func crate_value(depth: int) -> int:
 	return CRATE_SALVAGE_BASE * depth
+
+
+static func nugget_value(depth: int) -> int:
+	return NUGGET_SALVAGE_BASE * depth
 
 
 static func depth_hp_scale(depth: int) -> float:
