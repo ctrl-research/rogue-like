@@ -92,7 +92,8 @@ func _run_verified(min_elapsed: float) -> bool:
 		# Terrain determinism fingerprint: both peers must have built the
 		# exact same rock count from the broadcast seed (compared by the
 		# orchestrating script).
-		print("[e2e-%s] terrain_cells=%d" % [role, cs.terrain_initial_cells])
+		print("[e2e-%s] terrain_cells=%d ore_cells=%d" % [
+				role, cs.terrain_initial_cells, cs.terrain_initial_ore])
 	if role == "host" and _phase == "run1":
 		# The client dives as the Lancer; its kit must exist on OUR copy of
 		# its player node (spawn-data meta replication).

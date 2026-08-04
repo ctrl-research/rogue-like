@@ -108,14 +108,14 @@ Milestone 0 ships Barbfish + Angler brute only.
 - **M3 — done (PR #4)** — descend-or-extract chain, depth scaling, salvage
   as currency, persistent station upgrades (O2 reserve / hull plating /
   harpoon mk / dive fins).
-- **M4a — this PR** — content pass: Lurker (camouflaged ambusher), Jelly
+- **M4a — done (PR #5)** — content pass: Lurker (camouflaged ambusher), Jelly
   bloom (splits on death), Trench Maw mini-boss guarding the last crates;
   drone swarm + sonar pulse weapons; weapon evolutions (Chain Harpoon,
   Solar Lance, Pressure Bomb) unlocked by maxed weapon + paired passive.
 
 - **M4b — done (PR #10)** — feel/polish: procedural SFX + underwater audio
   bus, hit feedback (enemy hp sync), damage numbers, screen shake, bubbles.
-- **M4c — this PR** — unlockable divers, one per combat archetype, bought
+- **M4c — done (PR #11)** — unlockable divers, one per combat archetype, bought
   with banked salvage: Salvager (ranged), Lancer (ranged pierce), Brawler
   (melee, new plasma cutter), Driller (melee grinder, new seismic drill),
   Bomber (AoE burst, Mk2 charges), Echo (AoE pulse), Tinker (summoner).
@@ -125,17 +125,20 @@ Milestone 0 ships Barbfish + Angler brute only.
   corridors, server-authoritative destruction (drill digs fast, cutter
   chips, charges crater, fauna chew through walls), projectiles blocked
   by rock.
-- **M5.1 — this PR** — universal mining: any diver pushing into rock mines
-  it slowly; mining pauses your weapons ("hands full") unless you carry
-  the seismic drill, whose crews work and shoot at once.
+- **M5.1 — done (PR #13)** — universal mining: any diver pushing into rock
+  mines it slowly; mining pauses your weapons ("hands full") unless you
+  carry the seismic drill, whose crews work and shoot at once.
+- **M6 — this PR** — ore pockets: seeded gold seams buried in rock (richer
+  with depth, deterministic on every peer like the rock itself); digging
+  out an ore cell shakes loose a salvage nugget worth depth-scaled bonus
+  salvage — any destruction counts (mining, drill, charges, fauna chewing).
 
-## Backlog (post-M5)
+## Backlog (post-M6)
 
 ### Content
 
-- Terrain follow-ups: rooms/wreck structures (not just noise caves), ore
-  pockets in rock that drop bonus salvage when dug, enemy dig variety
-  (burrowers that tunnel toward you).
+- Terrain follow-ups: rooms/wreck structures (not just noise caves), enemy
+  dig variety (burrowers that tunnel toward you).
 - More evolutions (drone/sonar/cutter/drill have none yet) and a second
   boss variety.
 

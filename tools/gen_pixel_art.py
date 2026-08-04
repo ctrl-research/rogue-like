@@ -174,6 +174,25 @@ GEM = {
     },
 }
 
+# 8x8 salvage nugget (dropped when ore rock is dug out)
+NUGGET = {
+    "grid": [
+        "........",
+        "..GGY...",
+        ".GYYYG..",
+        "GGYWWYG.",
+        "GYWWYYGG",
+        ".GYYYGG.",
+        "..GGGG..",
+        "........",
+    ],
+    "palette": {
+        "G": "#8a6420",
+        "Y": "#d9a33c",
+        "W": "#f2cf6e",
+    },
+}
+
 # 16x16 salvage crate
 CRATE = {
     "grid": [
@@ -401,6 +420,7 @@ SPRITES = {
     "brute.png": BRUTE,
     "harpoon.png": HARPOON,
     "gem.png": GEM,
+    "nugget.png": NUGGET,
     "crate.png": CRATE,
     "bell.png": BELL,
 }
@@ -442,14 +462,17 @@ def gen_light(size: int = 128) -> list[list[tuple[int, int, int, int]]]:
 
 
 def gen_rock_atlas() -> list[list[tuple[int, int, int, int]]]:
-    """48x16 atlas: three 16x16 rock tile variants (deterministic speckling)."""
+    """64x16 atlas: three 16x16 rock tile variants (deterministic speckling)
+    plus a fourth ore variant — same rock, veined with salvage-gold glints."""
     base = hex_rgba("#2a3b46")
     dark = hex_rgba("#1c2a33")
     lite = hex_rgba("#3d5260")
     edge = hex_rgba("#15202a")
-    px = [[base for _ in range(48)] for _ in range(16)]
+    ore = hex_rgba("#d9a33c")
+    ore_lite = hex_rgba("#f2cf6e")
+    px = [[base for _ in range(64)] for _ in range(16)]
     for y in range(16):
-        for x in range(48):
+        for x in range(64):
             variant = x // 16
             lx = x % 16
             h = (lx * 29 + y * 13 + variant * 41) % 89
@@ -459,6 +482,12 @@ def gen_rock_atlas() -> list[list[tuple[int, int, int, int]]]:
                 px[y][x] = dark
             elif h < 20:
                 px[y][x] = lite
+            if variant == 3 and lx not in (0, 15) and y not in (0, 15):
+                v = (lx * 17 + y * 31) % 71
+                if v < 6:
+                    px[y][x] = ore
+                elif v == 6:
+                    px[y][x] = ore_lite
     return px
 
 

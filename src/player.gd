@@ -468,6 +468,9 @@ func _on_pickup(area: Area2D) -> void:
 	if area.is_in_group("gems") and not area.is_queued_for_deletion():
 		game.add_xp(GameRules.XP_PER_GEM)
 		area.queue_free()
+	elif area.is_in_group("nuggets") and not area.is_queued_for_deletion():
+		game.add_salvage(GameRules.nugget_value(game.depth))
+		area.queue_free()
 
 
 # --- State visuals (run on every peer via synced setters) ------------------

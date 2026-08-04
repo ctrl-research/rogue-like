@@ -12,6 +12,7 @@ const RING_SCENE := preload("res://scenes/sonar_ring.tscn")
 const SLASH_SCENE := preload("res://scenes/slash.tscn")
 const CRATE_SCENE := preload("res://scenes/salvage_crate.tscn")
 const BELL_SCENE := preload("res://scenes/dive_bell.tscn")
+const NUGGET_SCENE := preload("res://scenes/salvage_nugget.tscn")
 
 const HUD_SYNC_INTERVAL := 0.25
 const WALL_LAYER := 4
@@ -49,7 +50,8 @@ var _rng := RandomNumberGenerator.new()
 @onready var projectiles: Node2D = $Projectiles
 @onready var terrain: Terrain = $Terrain
 
-var terrain_initial_cells := 0  # determinism fingerprint (see e2e)
+var terrain_initial_cells := 0  # determinism fingerprints (see e2e)
+var terrain_initial_ore := 0
 
 
 func _ready() -> void:
@@ -59,6 +61,7 @@ func _ready() -> void:
 	$ProjectileSpawner.spawn_function = _spawn_projectile
 	_build_walls()
 	if multiplayer.is_server():
+		terrain.ore_mined.connect(_on_ore_mined)
 		multiplayer.peer_disconnected.connect(_on_peer_left)
 		_mark_ready(1, Station.meta_dict())
 	else:
@@ -182,6 +185,16 @@ func on_crate_collected() -> void:
 		_rpc_toast.rpc("All salvage secured! The dive bell has dropped — get to it!")
 
 
+## Digging into an ore seam shakes a nugget loose. Deferred: destruction is
+## triggered from physics callbacks (mining, charges, fauna chewing).
+func _on_ore_mined(pos: Vector2) -> void:
+	_spawn_loot_deferred.call_deferred("nugget", pos)
+
+
+func add_salvage(amount: int) -> void:
+	salvage_earned += amount
+
+
 func _spawn_loot_deferred(kind: String, pos: Vector2) -> void:
 	if game_over:
 		return
@@ -241,6 +254,8 @@ func _spawn_loot(data: Variant) -> Node:
 	match data.kind:
 		"gem":
 			node = GEM_SCENE.instantiate()
+		"nugget":
+			node = NUGGET_SCENE.instantiate()
 		"crate":
 			node = CRATE_SCENE.instantiate()
 		"bell":
@@ -350,6 +365,7 @@ func _build_site() -> void:
 func _rpc_build_site(map_seed: int, site_depth: int, crate_spots: PackedVector2Array) -> void:
 	terrain.build(map_seed, site_depth, crate_spots)
 	terrain_initial_cells = terrain.get_used_cells().size()
+	terrain_initial_ore = terrain.initial_ore_cells
 
 
 func _spawn_offsets() -> Array[Vector2]:
