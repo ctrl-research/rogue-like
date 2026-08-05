@@ -87,10 +87,15 @@ func _ready() -> void:
 	Settings.brightness = 1.0
 	Settings.load_data()
 	_check(is_equal_approx(Settings.brightness, 1.4), "brightness survives save/load")
-	# Deeper water is darker at any setting, and brightness lifts both.
+	# Ambient steps down by a constant amount per descent, floors rather than
+	# reaching black, and brightness lifts the whole thing.
 	var shallow := Settings.ambient_for_depth(1)
-	var deep := Settings.ambient_for_depth(9)
-	_check(deep.r < shallow.r, "ambient darkens with depth")
+	_check(is_equal_approx(shallow.r, Settings.AMBIENT_SURFACE.r), "depth 1 is the surface shade")
+	var one_step := shallow.r - Settings.ambient_for_depth(2).r
+	var two_steps := shallow.r - Settings.ambient_for_depth(3).r
+	_check(is_equal_approx(two_steps, one_step * 2.0), "each descent costs the same")
+	_check(is_equal_approx(Settings.ambient_for_depth(99).r, Settings.AMBIENT_FLOOR.r),
+			"ambient floors instead of reaching black")
 	Settings.set_brightness(2.0)
 	_check(Settings.ambient_for_depth(1).r > shallow.r, "brightness lifts the ambient")
 	Settings.set_brightness(1.0)

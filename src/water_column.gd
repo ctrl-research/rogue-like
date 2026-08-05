@@ -25,9 +25,11 @@ const FAR_DRIFT := Vector2(-3.0, 1.5)
 # dark already does most of this job, and a heavy vignette on top just fights
 # the lamp.
 const HAZE_NEAR := Color(0.03, 0.07, 0.10)  # colour of the closing dark
-const HAZE_MIN_ALPHA := 0.06  # vignette at the surface
-const HAZE_MAX_ALPHA := 0.18  # vignette deep down
-const HAZE_DEPTH_SPAN := 8.0  # depths over which the murk thickens
+# Stepped per descent, not interpolated over a span — same reasoning as the
+# ambient and the lamp: one constant unit of murk per depth.
+const HAZE_SURFACE_ALPHA := 0.06
+const HAZE_DEPTH_GAIN := 0.009  # per descent
+const HAZE_MAX_ALPHA := 0.18  # caps out around depth 14, with the ambient floor
 
 var _near: Sprite2D
 var _far: Sprite2D
@@ -63,8 +65,9 @@ func _process(delta: float) -> void:
 func set_depth(depth: int) -> void:
 	if _haze == null:
 		return
-	var sink := clampf((depth - 1) / HAZE_DEPTH_SPAN, 0.0, 1.0)
-	_haze.modulate.a = lerpf(HAZE_MIN_ALPHA, HAZE_MAX_ALPHA, sink)
+	var descents := maxi(0, depth - 1)
+	_haze.modulate.a = minf(
+			HAZE_MAX_ALPHA, HAZE_SURFACE_ALPHA + HAZE_DEPTH_GAIN * descents)
 
 
 func _build_layer(texture: Texture2D, view: Vector2) -> Sprite2D:

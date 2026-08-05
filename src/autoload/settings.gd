@@ -17,9 +17,15 @@ const SAVE_PATH := "user://settings.json"
 ## Ambient light in the trench, before brightness. Unlit terrain sits at these
 ## values, which is exactly why the calibration patch is drawn in the same
 ## shade: tune it until that patch is barely visible and unlit rock will be too.
+##
+## Stepped down by a fixed amount per descent rather than interpolated across a
+## span, for the same reason lamp reach is measured in pixels: a constant unit
+## per depth is a thing you can weigh against the light you're carrying, while a
+## fraction of an arbitrary range is not. All three channels reach the floor
+## together around depth 15.
 const AMBIENT_SURFACE := Color(0.062, 0.082, 0.115)
-const AMBIENT_TRENCH := Color(0.032, 0.045, 0.065)
-const AMBIENT_DEPTH_SPAN := 8.0
+const AMBIENT_DEPTH_LOSS := Color(0.003, 0.004, 0.0055)  # per descent
+const AMBIENT_FLOOR := Color(0.020, 0.028, 0.038)
 
 const BRIGHTNESS_MIN := 0.5
 const BRIGHTNESS_MAX := 2.2
@@ -35,8 +41,12 @@ func _ready() -> void:
 
 ## The CanvasModulate colour for a depth, with the player's brightness applied.
 func ambient_for_depth(depth: int) -> Color:
-	var sink := clampf((depth - 1) / AMBIENT_DEPTH_SPAN, 0.0, 1.0)
-	return scaled(AMBIENT_SURFACE.lerp(AMBIENT_TRENCH, sink))
+	var descents := maxi(0, depth - 1)
+	return scaled(Color(
+		maxf(AMBIENT_FLOOR.r, AMBIENT_SURFACE.r - AMBIENT_DEPTH_LOSS.r * descents),
+		maxf(AMBIENT_FLOOR.g, AMBIENT_SURFACE.g - AMBIENT_DEPTH_LOSS.g * descents),
+		maxf(AMBIENT_FLOOR.b, AMBIENT_SURFACE.b - AMBIENT_DEPTH_LOSS.b * descents),
+	))
 
 
 ## A shade with brightness applied. Clamped per channel so a high setting lifts

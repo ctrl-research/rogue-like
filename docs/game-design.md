@@ -36,6 +36,9 @@ The theme earns its mechanics:
   game's own unlit-ambient shade and asks the player to set the slider until the
   marked one is barely visible. Neighbouring patches are shown too, since
   judging a single dark patch in isolation is nearly impossible.
+  Ambient steps down by a **fixed amount per descent** rather than a fraction of
+  a span, and floors instead of reaching black — the same reasoning as lamp
+  reach: constant units are something you can weigh against each other.
 - **Depth** is a natural difficulty ladder and biome axis.
 - **The dive bell** is the extraction decision point: leave with what you have,
   or descend to the next wreck with dwindling oxygen.
