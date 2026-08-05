@@ -13,6 +13,7 @@ var _player: Player
 var _steer_cd := 0.0
 var _status_cd := 0.0
 var _bell_wait := 0.0
+var _xp_cd := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -48,6 +49,17 @@ func _process(delta: float) -> void:
 	if _steer_cd <= 0.0:
 		_steer_cd = 0.2
 		_steer()
+
+	# Drip team XP so the run actually climbs levels. The per-site assists
+	# finish a quest seconds after it starts, which is deliberate — but it
+	# leaves the bot too little combat to level on gems alone, and a run that
+	# never levels never opens an upgrade card, so the offer, pick and
+	# evolution paths all went untested while CI stayed green.
+	if multiplayer.is_server() and not _game.game_over:
+		_xp_cd -= delta
+		if _xp_cd <= 0.0:
+			_xp_cd = 3.0
+			_game.add_xp(4)
 	# The bot is a poor quest hero, so shortly into each site the harness
 	# force-completes the objective server-side (crates one per tick, the
 	# beast and Warden in one blow; the swarm rides its own timer) to
