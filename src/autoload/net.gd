@@ -175,11 +175,17 @@ func close_room() -> void:
 
 ## Replicate despawns for all game nodes while every peer still has the
 ## game scene, so the scene change that follows is silent on the network.
+## Client-authoritative synchronizers are hushed first — they'd otherwise
+## keep streaming into the gap between the host's despawn and the clients'.
 func _despawn_game_nodes() -> void:
 	var cs := get_tree().current_scene
-	if cs != null and cs.has_method("despawn_all"):
-		cs.despawn_all()
-		await get_tree().create_timer(0.25).timeout
+	if cs == null or not cs.has_method("despawn_all"):
+		return
+	if cs.has_method("quiesce_sync"):
+		cs.quiesce_sync()
+		await get_tree().create_timer(0.1).timeout
+	cs.despawn_all()
+	await get_tree().create_timer(0.25).timeout
 
 
 @rpc("authority", "call_local", "reliable")
