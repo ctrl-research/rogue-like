@@ -44,6 +44,10 @@ const DELIVER_RADIUS := 60.0  # payload-to-bell-zone distance that completes
 # the next winch-refit checkpoint at the station.
 const BOSS_DEPTH_INTERVAL := 5
 const BOSS_REWARD_BASE := 40  # lair guardian bounty, times depth
+# Ordinary waves stop this far below ENEMY_CAP inside a lair, so the guardian
+# and the adds it calls always have room to exist. Without the reserve the
+# trash saturates the cap and the boss fight becomes a crowd.
+const BOSS_WAVE_HEADROOM := 24
 
 
 static func xp_needed(level: int) -> int:
