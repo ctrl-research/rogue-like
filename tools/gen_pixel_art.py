@@ -972,6 +972,31 @@ def gen_shadow(width: int = 16, height: int = 5) -> list[list[tuple[int, int, in
     return px
 
 
+def gen_motes(
+    size: int = 64, count: int = 40, brightness: int = 70, seed: int = 5
+) -> list[list[tuple[int, int, int, int]]]:
+    """Tileable marine snow: sparse pale specks on transparency. Specks wrap
+    around the edges, so the tile repeats without seams — two of these scroll
+    at different rates to give the water column some volume."""
+    px = [[(0, 0, 0, 0) for _ in range(size)] for _ in range(size)]
+    for i in range(count):
+        h = _hash2(i + 1, seed)
+        cx = h % size
+        cy = (h >> 8) % size
+        radius = 2 if (h >> 16) % 4 == 0 else 1  # mostly motes, a few flakes
+        alpha = brightness - (h >> 18) % 25
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                if dx * dx + dy * dy > radius * radius:
+                    continue
+                # Wrapping the write is what makes the tile seamless.
+                x = (cx + dx) % size
+                y = (cy + dy) % size
+                core = dx == 0 and dy == 0
+                px[y][x] = (200, 225, 235, alpha if core else int(alpha * 0.45))
+    return px
+
+
 def gen_ring(size: int = 64) -> list[list[tuple[int, int, int, int]]]:
     """Thin cyan ring for the sonar pulse visual (scaled up at runtime)."""
     c = (size - 1) / 2.0
@@ -997,13 +1022,17 @@ def main() -> None:
     write_png(os.path.join(OUT_DIR, "floor.png"), gen_floor())
     write_png(os.path.join(OUT_DIR, "light.png"), gen_light())
     write_png(os.path.join(OUT_DIR, "shadow.png"), gen_shadow())
+    # Sparse on purpose. Tiled across a 640x360 view these land at roughly
+    # 250 specks across a 640x360 view; the first attempt was ~1100 and read as a blizzard.
+    write_png(os.path.join(OUT_DIR, "motes_near.png"), gen_motes(128, 6, 58, 5))
+    write_png(os.path.join(OUT_DIR, "motes_far.png"), gen_motes(128, 12, 30, 19))
     write_png(os.path.join(OUT_DIR, "ring.png"), gen_ring())
     write_png(os.path.join(OUT_DIR, "rock.png"), gen_rock_atlas())
     write_png(os.path.join(OUT_DIR, "rock_edge.png"), gen_rock_edge_atlas())
     write_png(os.path.join(OUT_DIR, "rock_face.png"), gen_rock_face_atlas())
     write_png(os.path.join(OUT_DIR, "rock_growth.png"), gen_rock_growth_atlas())
     write_png(os.path.join(OUT_DIR, "rock_tuft.png"), gen_rock_tuft_atlas())
-    print(f"Wrote {len(SPRITES) + 9} sprites to {os.path.normpath(OUT_DIR)}")
+    print(f"Wrote {len(SPRITES) + 11} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":
