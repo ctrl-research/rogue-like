@@ -19,10 +19,14 @@ const PAYLOAD_SCENE := preload("res://scenes/payload.tscn")
 const HUD_SYNC_INTERVAL := 0.25
 const WALL_LAYER := 4
 
-# Ambient light by depth. SURFACE_MURK matches the Darkness node's authored
-# colour, so depth 1 looks exactly as it did before.
-const SURFACE_MURK := Color(0.42, 0.5, 0.64)
-const TRENCH_MURK := Color(0.22, 0.30, 0.39)
+# Ambient light by depth. Crushed almost to black: outside a light source the
+# trench should hide what's in it, so a sprite's own colour times this ambient
+# lands close enough to nothing to read as unseen. What makes this work for
+# co-op without any extra code is that 2D lighting composites per pixel — every
+# diver's lamp is present on every peer, so the crew's vision is additive, and
+# any light source added later joins in for free (issue #20).
+const SURFACE_MURK := Color(0.10, 0.13, 0.18)
+const TRENCH_MURK := Color(0.05, 0.07, 0.10)
 const MURK_DEPTH_SPAN := 8.0
 
 ## Shadow spread and drop per loot kind — pickups are small and sit low, the
@@ -35,6 +39,17 @@ const LOOT_SHADOW := {
 	"bell": Vector2(1.2, 6.0),
 	"relay": Vector2(1.0, 6.0),
 	"payload": Vector2(0.7, 5.0),
+}
+
+## Marker lights for the things a quest sends the crew to find. Without these
+## the dark ambient turns every objective into a search of an unlit room. Gems
+## and nuggets deliberately have none: you collect those by walking over them,
+## which means your own lamp is already on them, and there can be dozens.
+const LOOT_BEACON := {
+	"crate": Color(1.0, 0.85, 0.45),
+	"bell": Color(0.55, 1.0, 0.75),
+	"relay": Color(0.5, 0.9, 1.0),
+	"payload": Color(1.0, 0.82, 0.5),
 }
 
 # State the HUD reads. Kept current on clients via _rpc_hud / _rpc_game_over.
@@ -439,6 +454,11 @@ func _spawn_enemy(data: Variant) -> Node:
 	node.setup(data.kind, data.hp_scale)
 	# setup() has already applied the kind's scale, and the shadow rides it.
 	Fx.attach_shadow(node, 1.0, 7.0)
+	if data.kind == "warden":
+		# The lair guardian carries its own lure-light. A boss you cannot see is
+		# just a hazard; the beast stays unlit on purpose, because tracking it by
+		# sonar IS the hunt.
+		Fx.attach_beacon(node, Color(1.0, 0.72, 0.42), 0.9, 0.85)
 	return node
 
 
@@ -464,6 +484,12 @@ func _spawn_loot(data: Variant) -> Node:
 	node.set("game", self)
 	var shadow: Vector2 = LOOT_SHADOW.get(data.kind, Vector2(0.8, 5.0))
 	Fx.attach_shadow(node, shadow.x, shadow.y)
+	if LOOT_BEACON.has(data.kind):
+		# The bell is the way out, so it burns brighter and further than the
+		# rest — it should be findable from across a dark site.
+		var bright := data.kind == "bell"
+		Fx.attach_beacon(node, LOOT_BEACON[data.kind],
+				1.15 if bright else 0.8, 1.1 if bright else 0.6)
 	return node
 
 

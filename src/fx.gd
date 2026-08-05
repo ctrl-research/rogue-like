@@ -8,6 +8,7 @@ const MAX_DAMAGE_NUMBERS := 40
 const MAX_POOFS := 24
 
 const SHADOW_TEXTURE := preload("res://assets/sprites/shadow.png")
+const LIGHT_TEXTURE := preload("res://assets/sprites/light.png")
 
 
 ## Anchor a sprite to the deck. Without a contact shadow a flat sprite reads as
@@ -22,6 +23,20 @@ static func attach_shadow(host: Node2D, spread := 1.0, drop := 8.0) -> void:
 	shadow.position = Vector2(0, drop)
 	host.add_child(shadow)
 	host.move_child(shadow, 0)
+
+
+## A marker light on an objective. Once the ambient is dark enough to hide what
+## it touches, anything the crew is sent to find has to carry its own glow or
+## the quest becomes a search of an unlit room. These are the first of the
+## "other light sources" from issue #20, and they light the rock around them for
+## the whole crew exactly like a diver's lamp does.
+static func attach_beacon(host: Node2D, color: Color, energy := 0.85, spread := 0.7) -> void:
+	var light := PointLight2D.new()
+	light.texture = LIGHT_TEXTURE
+	light.color = color
+	light.energy = energy
+	light.texture_scale = spread
+	host.add_child(light)
 
 
 static func damage_number(ctx: Node, pos: Vector2, amount: float, color := Color(1.0, 0.9, 0.5)) -> void:

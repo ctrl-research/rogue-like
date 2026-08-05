@@ -49,7 +49,7 @@ shape = SubResource("CircleShape2D_body")
 
 [node name="Lamp" type="PointLight2D" parent="."]
 color = Color(1, 0.95, 0.85, 1)
-energy = 1.2
+energy = 2.1
 texture = ExtResource("3_light")
 texture_scale = 2.2
 

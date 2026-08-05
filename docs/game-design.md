@@ -19,6 +19,13 @@ The theme earns its mechanics:
 
 - **Oxygen** is the run timer (the roguelike "hunger clock").
 - **Darkness / light radius** creates tension and makes positioning matter.
+  Ambient light is crushed nearly to black, so what you haven't lit you can't
+  really see — fauna included. Vision is **additive across the crew**: 2D
+  lighting composites per pixel and every diver's lamp exists on every peer, so
+  the crew sees the union of their lamps with no netcode at all, and any new
+  light source joins in for free. Anything a quest sends you to find carries a
+  marker light, or the objective becomes a search of an unlit room; gems don't,
+  because collecting one means your own lamp is already on it.
 - **Depth** is a natural difficulty ladder and biome axis.
 - **The dive bell** is the extraction decision point: leave with what you have,
   or descend to the next wreck with dwindling oxygen.
