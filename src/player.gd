@@ -281,6 +281,14 @@ func _server_combat(delta: float) -> void:
 			_cooldowns[id] = Weapons.weapon_cd(id, weapons[id])
 
 
+## Stop streaming this diver's state before the site is torn down. Movement is
+## client-authoritative, so without this a client keeps sending position to a
+## host that has already freed its copy of the node.
+func stop_syncing() -> void:
+	$MovementSync.public_visibility = false
+	$StateSync.public_visibility = false
+
+
 ## Server-teleport that survives client-authoritative movement: runs on every
 ## peer (including the owner, whose copy is the one that syncs onward).
 @rpc("authority", "call_local", "reliable")

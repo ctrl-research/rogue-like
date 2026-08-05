@@ -359,6 +359,22 @@ func _spawn_loot_deferred(kind: String, pos: Vector2) -> void:
 		_bell = node as Area2D
 
 
+## Every peer stops streaming its own diver, ahead of despawn_all(). The host
+## frees its copies first and clients only follow once the despawn replicates,
+## so without this pause a client spends that gap syncing position to nodes
+## the host no longer has ("failed to get cached node" on the host's side).
+func quiesce_sync() -> void:
+	if multiplayer.is_server():
+		_rpc_quiesce.rpc()
+
+
+@rpc("authority", "call_local", "reliable")
+func _rpc_quiesce() -> void:
+	for p in players.get_children():
+		if p is Player:
+			p.stop_syncing()
+
+
 ## Server: free every spawner-tracked node so despawns replicate while all
 ## peers still have the game scene. Called before leaving the scene — a raw
 ## scene change would race the despawn broadcasts against clients' own

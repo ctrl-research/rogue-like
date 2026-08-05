@@ -93,8 +93,12 @@ if [ -z "$HO" ] || [ "$HO" = "0" ] || [ "$HO" != "$CO" ]; then
 fi
 grep -q "E2E_CLIENT_RETRY_OK" "$OUT_DIR/client.log"   || { echo "MISSING E2E_CLIENT_RETRY_OK"; FAIL=1; }
 # Script and replication errors mean sync is silently broken even if the
-# smoke markers pass — treat them as failures.
-if grep -nE "SCRIPT ERROR|MultiplayerSynchronizer|replication" "$OUT_DIR/host.log" "$OUT_DIR/client.log"; then
+# smoke markers pass — treat them as failures. "Failed to get cached node" and
+# "Ignoring sync data" are how Godot reports traffic aimed at a node the peer
+# no longer has (a scene transition leaking sync); they name neither
+# "replication" nor "MultiplayerSynchronizer", so match them explicitly.
+if grep -nE "SCRIPT ERROR|MultiplayerSynchronizer|replication|Failed to get cached node|Ignoring sync data" \
+    "$OUT_DIR/host.log" "$OUT_DIR/client.log"; then
   echo "script/replication errors detected (see above)"; FAIL=1
 fi
 if [ "$FAIL" -ne 0 ]; then exit 1; fi
