@@ -193,6 +193,25 @@ NUGGET = {
     },
 }
 
+# 8x8 guide arrow (off-screen objective marker). Points +X; the HUD rotates
+# it and tints the white fill per target, so the outline must stay dark.
+ARROW = {
+    "grid": [
+        "OO......",
+        "OWWO....",
+        "OWWWWO..",
+        "OWWWWWWO",
+        "OWWWWWWO",
+        "OWWWWO..",
+        "OWWO....",
+        "OO......",
+    ],
+    "palette": {
+        "O": "#0c161c",
+        "W": "#ffffff",
+    },
+}
+
 # 16x16 upgrade console (sub interior): terminal with screen + keys
 CONSOLE = {
     "grid": [
@@ -625,6 +644,7 @@ SPRITES = {
     "gem.png": GEM,
     "nugget.png": NUGGET,
     "warden.png": WARDEN,
+    "arrow.png": ARROW,
     "console.png": CONSOLE,
     "locker.png": LOCKER,
     "hatch.png": HATCH,

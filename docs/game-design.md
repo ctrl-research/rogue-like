@@ -177,13 +177,18 @@ Milestone 0 ships Barbfish + Angler brute only.
   bar, big bounty), and buyable start-depth checkpoints: clearing a lair
   unlocks the next winch refit at the station (tier N costs 200×N, dives
   may then start at depth 5N+1 — bought progress, not free progress).
-- **M9 — this PR** — the submarine: a walkable interior homebase that IS
+- **M9 — done (PR #21)** — the submarine: a walkable interior homebase that IS
   the multiplayer lobby. Solo and crews alike board the sub; divers walk
   around with synced positions and name tags, portholes look out on the
   abyss, and the wall reads the day and crew count. Stations aboard:
   upgrade CONSOLE (upgrades + winch), diver LOCKER, salvage STASH, and
   the DIVE HATCH (lead diver starts the dive; invite link, leave/disband
   live there too). The title screen is now just the connect menu.
+- **M9.1 — this PR** — off-screen objective arrows: edge-pinned markers
+  with range, pointing at whatever this depth's quest wants (crates, the
+  beast, the relay, the payload, the bell zone, the Warden) and at downed
+  crewmates ahead of everything. An arrow hides once its target is on
+  camera, which retires the HUD's text compass bearings.
 
 ## Backlog (post-M6)
 
@@ -202,7 +207,7 @@ Milestone 0 ships Barbfish + Angler brute only.
   underwater mix; music that intensifies with depth.
 - Better sprites + animation frames (idle/swim), parallax debris layers,
   bubble particles, boot splash/title art.
-- Minimap or off-screen objective arrows (crates/bell).
+- A minimap, if the edge arrows (M9.1) prove not to be enough.
 
 ### Infra
 
