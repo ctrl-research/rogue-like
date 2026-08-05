@@ -3,10 +3,25 @@ extends Node
 ## movement and auto-picked level-up upgrades, so headless CI exercises
 ## combat, weapon unlocks, pickups, and the offer/pick flow. Run with:
 ##
-##   godot --headless --path . --quit-after 6000 tests/headless_sim.tscn
+##   godot --headless --path . --quit-after 24000 tests/headless_sim.tscn
+##
+## It ASSERTS what a run must reach and prints SIM_OK / SIM_FAIL, which the
+## build greps for. Without that it could only ever fail on a crash, and this
+## session lost coverage three separate times while CI stayed green: the e2e's
+## error grep matched the wrong strings, extraction quietly stopped happening
+## at the depth-5 lair, and the upgrade path fell to a single card. Every one
+## of those needed a human reading logs to notice. A floor on what a run
+## achieves turns that class of silent decay into a failed build.
 
 const GAME_SCENE := preload("res://scenes/game.tscn")
 const ACTIONS: Array[String] = ["move_left", "move_right", "move_up", "move_down"]
+
+# Floors, set below what a healthy run reaches so ordinary variance is quiet.
+const MIN_DEPTH := 5  # the first boss lair
+const MIN_CARDS := 4
+const MIN_EVOLUTIONS := 2
+const MIN_BELLS := 4  # bell reached per site on the way down
+const MIN_QUEST_KINDS := 3
 
 var _game: Node2D
 var _player: Player
@@ -15,6 +30,16 @@ var _status_cd := 0.0
 var _bell_wait := 0.0
 var _xp_cd := 0.0
 var _rng := RandomNumberGenerator.new()
+
+# What the run actually managed, checked once it ends.
+var _cards := 0
+var _evolutions := 0
+var _bells := 0
+var _max_depth := 1
+var _quest_kinds := {}
+var _dug := false
+var _was_awaiting := false
+var _reported := false
 
 
 func _ready() -> void:
@@ -35,6 +60,10 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if _player == null:
 		_wire_player()
+		return
+	_observe()
+	if _game.game_over:
+		_report()
 		return
 	_status_cd -= delta
 	if _status_cd <= 0.0:
@@ -60,6 +89,15 @@ func _process(delta: float) -> void:
 		if _xp_cd <= 0.0:
 			_xp_cd = 3.0
 			_game.add_xp(4)
+
+	# Keep the bot alive. It is a deliberately mediocre pilot, and a wipe at
+	# the depth-5 lair takes extraction, banking and the winch record out of
+	# coverage entirely — which happened. The harness tests paths, not the
+	# bot's skill, so survival is not the thing being measured here. (Downed
+	# and bleed-out therefore need their own test; they were only ever covered
+	# by unlucky runs anyway.)
+	if multiplayer.is_server() and not _player.dead and _player.hp < _player.max_hp * 0.4:
+		_player.hp = _player.max_hp
 	# The bot is a poor quest hero, so shortly into each site the harness
 	# force-completes the objective server-side (crates one per tick, the
 	# beast and Warden in one blow; the swarm rides its own timer) to
@@ -230,6 +268,57 @@ func _wire_player() -> void:
 			return
 
 
+## Watch what the run reaches. Sampled per frame rather than hooked, so it
+## stays out of the game's way.
+func _observe() -> void:
+	_max_depth = maxi(_max_depth, _game.depth)
+	_quest_kinds[_game.quest_kind] = true
+	if _game.awaiting_choice and not _was_awaiting:
+		_bells += 1
+	_was_awaiting = _game.awaiting_choice
+	if not _dug and _game.terrain.get_used_cells().size() < _game.terrain_initial_cells:
+		_dug = true
+
+
+## Print the verdict once the run ends. SIM_FAIL names every floor that was
+## missed, so a regression says what it broke rather than just going red.
+func _report() -> void:
+	if _reported:
+		return
+	_reported = true
+	var kinds: Array = _quest_kinds.keys()
+	print("[sim] run: depth=%d cards=%d evolutions=%d bells=%d quests=%s dug=%s won=%s bank=%d lair=%d" % [
+		_max_depth, _cards, _evolutions, _bells, kinds, _dug,
+		_game.victory, Station.bank, Station.cleared_lair,
+	])
+	var missed: PackedStringArray = []
+	if _max_depth < MIN_DEPTH:
+		missed.append("depth %d < %d" % [_max_depth, MIN_DEPTH])
+	if _cards < MIN_CARDS:
+		missed.append("upgrade cards %d < %d" % [_cards, MIN_CARDS])
+	if _evolutions < MIN_EVOLUTIONS:
+		missed.append("evolutions %d < %d" % [_evolutions, MIN_EVOLUTIONS])
+	if _bells < MIN_BELLS:
+		missed.append("bells reached %d < %d" % [_bells, MIN_BELLS])
+	if kinds.size() < MIN_QUEST_KINDS:
+		missed.append("quest kinds %d < %d" % [kinds.size(), MIN_QUEST_KINDS])
+	if not _dug:
+		missed.append("no rock destroyed")
+	if not _game.victory:
+		missed.append("run did not reach extraction")
+	if Station.bank <= 0:
+		missed.append("nothing banked")
+	if Station.cleared_lair < MIN_DEPTH:
+		missed.append("lair clear not recorded")
+	if missed.is_empty():
+		print("SIM_OK")
+	else:
+		print("SIM_FAIL: %s" % ", ".join(missed))
+	# Ending here rather than idling to --quit-after also gives CI back the
+	# couple of minutes the run used to spend printing the same line.
+	get_tree().quit(0 if missed.is_empty() else 1)
+
+
 func _on_offer(options: Array) -> void:
 	await get_tree().create_timer(0.3).timeout
 	if not options.is_empty() and is_instance_valid(_player):
@@ -239,4 +328,7 @@ func _on_offer(options: Array) -> void:
 		print("[sim] offered %s -> picked %s (weapons=%s passives=%s)" % [
 			options, pick, _player.weapons, _player.passives,
 		])
+		_cards += 1
+		if pick.begins_with("evolve_"):
+			_evolutions += 1
 		_player.request_pick(pick)
