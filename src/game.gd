@@ -385,7 +385,9 @@ func _spawn_enemy(data: Variant) -> Node:
 
 
 func _spawn_loot(data: Variant) -> Node:
-	var node: Area2D
+	# Node2D, not Area2D: the relay and payload are plain nodes — only the
+	# pickups and the bell need overlap detection.
+	var node: Node2D
 	match data.kind:
 		"gem":
 			node = GEM_SCENE.instantiate()
