@@ -168,7 +168,11 @@ Milestone 0 ships Barbfish + Angler brute only.
   the first two new types: survive the swarm, hunt the beast — a leashed
   alpha lurker tracked by sonar pings and a HUD bearing); completing the
   quest drops the bell; day counter persists at the station ("Day N").
-- **M7b — planned** — quest pack 2: repair & defend, escort the payload.
+- **M7b — this PR** — quest pack 2: repair & defend (hold position by a
+  wrecked relay while it repairs under elevated spawn pressure — more
+  divers on the spot repair faster) and escort the payload (touch to tow;
+  the carrier swims at 60% speed and reads as easy prey to fauna, deliver
+  to the bell zone at the arena center).
 - **M8 — planned** — boss lairs every 5th depth with a dedicated boss, and
   buyable start-depth checkpoints (winch refit) sold at the station after
   a lair is cleared.

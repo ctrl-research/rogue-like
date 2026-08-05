@@ -28,10 +28,16 @@ const NUGGET_SALVAGE_BASE := 1  # salvage per mined ore nugget, times depth
 # Mini quests: every depth rolls one from the pool; completing it summons the
 # bell. Depth 1 is always crates (it teaches the loop). Deeper depths draw
 # from a shuffled bag so a run never repeats a quest before seeing them all.
-const QUEST_KINDS: Array[String] = ["crates", "swarm", "hunt"]
+const QUEST_KINDS: Array[String] = ["crates", "swarm", "hunt", "repair", "escort"]
 const SWARM_TIME := 70.0  # seconds the crew must outlast the swarm
 const SWARM_SPAWN_SCALE := 0.5  # spawn-interval multiplier during the swarm
-const QUEST_REWARD_BASE := 20  # swarm/hunt completion salvage, times depth
+const QUEST_REWARD_BASE := 20  # non-crate quest completion salvage, times depth
+const REPAIR_TIME := 40.0  # seconds a diver must hold near the relay
+const REPAIR_RADIUS := 90.0  # hold-position range around the relay
+const REPAIR_SPAWN_SCALE := 0.75  # spawn pressure while the relay quest runs
+const TOW_SPEED_SCALE := 0.6  # the payload carrier swims heavy
+const TOW_GRAB_RADIUS := 26.0  # touch range to pick up the payload
+const DELIVER_RADIUS := 60.0  # payload-to-bell-zone distance that completes
 
 
 static func xp_needed(level: int) -> int:

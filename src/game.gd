@@ -13,6 +13,8 @@ const SLASH_SCENE := preload("res://scenes/slash.tscn")
 const CRATE_SCENE := preload("res://scenes/salvage_crate.tscn")
 const BELL_SCENE := preload("res://scenes/dive_bell.tscn")
 const NUGGET_SCENE := preload("res://scenes/salvage_nugget.tscn")
+const RELAY_SCENE := preload("res://scenes/relay.tscn")
+const PAYLOAD_SCENE := preload("res://scenes/payload.tscn")
 
 const HUD_SYNC_INTERVAL := 0.25
 const WALL_LAYER := 4
@@ -48,6 +50,7 @@ var _maw_spawned := false  # one Trench Maw per site (crate quests only)
 var _quest_bag: Array = []  # shuffled draw pile for per-depth quest rolls
 var _site_started := 0.0  # `elapsed` when this site began (swarm timer)
 var _ping_cd := 0.0  # hunt quest: sonar ping cadence
+var _carrier: Player  # escort quest: whoever is towing the payload
 var _rng := RandomNumberGenerator.new()
 
 @onready var players: Node2D = $Players
@@ -214,6 +217,69 @@ func _tick_quest(delta: float) -> void:
 			if beast != null and _ping_cd <= 0.0:
 				_ping_cd = 5.0
 				spawn_ring(beast.global_position, 90.0)
+		"repair":
+			_tick_repair(delta)
+		"escort":
+			_tick_escort(delta)
+
+
+## Progress accrues while any active diver holds inside the relay's radius —
+## a second diver on the spot speeds it up, the rest hold off the waves.
+func _tick_repair(delta: float) -> void:
+	var relay := _find_in_loot("relay")
+	if relay == null:
+		return
+	var nearby := 0
+	for p in _active_players():
+		if p.global_position.distance_to(relay.global_position) <= GameRules.REPAIR_RADIUS:
+			nearby += 1
+	if nearby == 0:
+		return
+	quest_progress += delta * (1.0 + 0.5 * (nearby - 1))
+	if quest_progress >= GameRules.REPAIR_TIME:
+		salvage_earned += GameRules.quest_reward(depth)
+		_complete_quest("The relay hums back to life — contract paid (+%d)!" % GameRules.quest_reward(depth))
+
+
+## The payload trails whoever grabbed it; the carrier swims heavy and the
+## fauna smell easy prey (see player.towing / enemy targeting bias).
+func _tick_escort(delta: float) -> void:
+	var payload := _find_in_loot("payload")
+	if payload == null:
+		return
+	if _carrier != null:
+		if not is_instance_valid(_carrier) or _carrier.is_queued_for_deletion():
+			_carrier = null  # left the crew mid-tow
+		elif _carrier.dead or _carrier.downed:
+			_carrier.towing = false
+			_carrier = null
+			_rpc_toast.rpc("The payload drifts free — someone grab it!")
+	if _carrier == null:
+		for p in _active_players():
+			if p.global_position.distance_to(payload.global_position) <= GameRules.TOW_GRAB_RADIUS:
+				_carrier = p
+				p.towing = true
+				_rpc_toast.rpc("%s has the payload — cover them!" % p.display_name())
+				break
+	if _carrier != null:
+		var to_carrier := _carrier.global_position - payload.global_position
+		if to_carrier.length() > 14.0:
+			payload.global_position += to_carrier.normalized() \
+					* minf(to_carrier.length() - 14.0, 150.0 * delta)
+	if payload.global_position.distance_to(GameRules.ARENA_SIZE / 2.0) <= GameRules.DELIVER_RADIUS:
+		if _carrier != null and is_instance_valid(_carrier):
+			_carrier.towing = false
+		_carrier = null
+		payload.queue_free()
+		salvage_earned += GameRules.quest_reward(depth)
+		_complete_quest("Payload secured at the bell zone (+%d)!" % GameRules.quest_reward(depth))
+
+
+func _find_in_loot(group: String) -> Node2D:
+	for n in loot.get_children():
+		if n.is_in_group(group) and not n.is_queued_for_deletion():
+			return n
+	return null
 
 
 func on_beast_killed(pos: Vector2) -> void:
@@ -325,6 +391,10 @@ func _spawn_loot(data: Variant) -> Node:
 			node = GEM_SCENE.instantiate()
 		"nugget":
 			node = NUGGET_SCENE.instantiate()
+		"relay":
+			node = RELAY_SCENE.instantiate()
+		"payload":
+			node = PAYLOAD_SCENE.instantiate()
 		"crate":
 			node = CRATE_SCENE.instantiate()
 		"bell":
@@ -420,6 +490,9 @@ func _build_site() -> void:
 	crates_left = GameRules.CRATE_COUNT if quest_kind == "crates" else 0
 	_site_started = elapsed
 	_ping_cd = 0.0
+	if _carrier != null and is_instance_valid(_carrier):
+		_carrier.towing = false
+	_carrier = null
 
 	var spots := PackedVector2Array()
 	var center := GameRules.ARENA_SIZE / 2.0
@@ -443,6 +516,14 @@ func _build_site() -> void:
 		"hunt":
 			_spawn_beast(spots[_rng.randi() % spots.size()])
 			_rpc_toast.rpc("Quest: hunt the beast — follow the sonar pings.")
+		"repair":
+			var relay_spot: Vector2 = spots[_rng.randi() % spots.size()]
+			$LootSpawner.spawn({"kind": "relay", "pos": terrain.find_open_near(relay_spot)})
+			_rpc_toast.rpc("Quest: find the wrecked relay and hold position while it repairs.")
+		"escort":
+			var pod_spot: Vector2 = spots[_rng.randi() % spots.size()]
+			$LootSpawner.spawn({"kind": "payload", "pos": terrain.find_open_near(pod_spot)})
+			_rpc_toast.rpc("Quest: tow the payload to the bell zone — its carrier swims heavy.")
 
 
 @rpc("authority", "call_local", "reliable")
@@ -459,8 +540,11 @@ func _spawn_offsets() -> Array[Vector2]:
 func _spawn_waves(delta: float) -> void:
 	_spawn_accum += delta
 	var interval := clampf(1.8 - elapsed * 0.008, 0.4, 1.8) * GameRules.depth_interval_scale(depth)
-	if quest_kind == "swarm" and not quest_done:
-		interval *= GameRules.SWARM_SPAWN_SCALE
+	if not quest_done:
+		if quest_kind == "swarm":
+			interval *= GameRules.SWARM_SPAWN_SCALE
+		elif quest_kind == "repair":
+			interval *= GameRules.REPAIR_SPAWN_SCALE
 	if _spawn_accum < interval or enemies.get_child_count() >= GameRules.ENEMY_CAP:
 		return
 	_spawn_accum = 0.0

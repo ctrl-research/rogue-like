@@ -43,6 +43,7 @@ var dead := false:
 var downed := false:
 	set = _set_downed
 var revive_progress := 0.0
+var towing := false  # escort quest: server-set, synced; carrier swims heavy
 var mine_dir := Vector2.ZERO  # synced; nonzero while pushing into rock
 
 var weapons := {"harpoon": 1}  # id -> level
@@ -108,7 +109,7 @@ func _physics_process(delta: float) -> void:
 		mine_dir = Vector2.ZERO
 		if not downed:
 			var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-			velocity = input * move_speed
+			velocity = input * move_speed * (GameRules.TOW_SPEED_SCALE if towing else 1.0)
 			move_and_slide()
 			# Mining: colliding with rock while actively pressing into it.
 			# Detected here on the owning client (movement is client-auth)

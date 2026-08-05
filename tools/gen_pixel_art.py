@@ -193,6 +193,61 @@ NUGGET = {
     },
 }
 
+# 16x16 wrecked relay (repair-quest objective): battered console, antenna,
+# warning light
+RELAY = {
+    "grid": [
+        ".......Y........",
+        ".......G........",
+        ".......G........",
+        "....GGGGGGG.....",
+        "...GSSSSSSSG....",
+        "...GSCCCCCSG....",
+        "...GSCWWCCSG....",
+        "...GSCCCCCSG....",
+        "...GSSSSSSSG....",
+        "...GSDDSDDSG....",
+        "...GSDDSDDSG....",
+        "...GSSSSSSSG....",
+        "....GGGGGGG.....",
+        "....G.....G.....",
+        "...GG.....GG....",
+        "................",
+    ],
+    "palette": {
+        "G": "#4a5a64",
+        "S": "#2c3a44",
+        "C": "#153a4a",
+        "W": "#7ee6ff",
+        "D": "#1c2a33",
+        "Y": "#ffd75e",
+    },
+}
+
+# 12x12 salvage payload (escort-quest objective): sealed pressure pod
+PAYLOAD = {
+    "grid": [
+        "....GGGG....",
+        "..GGYYYYGG..",
+        ".GYYWWWWYYG.",
+        ".GYWWCCWWYG.",
+        "GYYWCCCCWYYG",
+        "GYWWCCCCWWYG",
+        "GYWWCCCCWWYG",
+        "GYYWCCCCWYYG",
+        ".GYWWCCWWYG.",
+        ".GYYWWWWYYG.",
+        "..GGYYYYGG..",
+        "....GGGG....",
+    ],
+    "palette": {
+        "G": "#6a5a2a",
+        "Y": "#c9a84c",
+        "W": "#e8d896",
+        "C": "#7ee6ff",
+    },
+}
+
 # 16x16 salvage crate
 CRATE = {
     "grid": [
@@ -421,6 +476,8 @@ SPRITES = {
     "harpoon.png": HARPOON,
     "gem.png": GEM,
     "nugget.png": NUGGET,
+    "relay.png": RELAY,
+    "payload.png": PAYLOAD,
     "crate.png": CRATE,
     "bell.png": BELL,
 }
