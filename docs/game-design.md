@@ -39,7 +39,14 @@ The theme earns its mechanics:
   Ambient steps down by a **fixed amount per descent** rather than a fraction of
   a span, and floors instead of reaching black — the same reasoning as lamp
   reach: constant units are something you can weigh against each other.
-- **Depth** is a natural difficulty ladder and biome axis.
+- **Depth** is a natural difficulty ladder and biome axis. It also **eats the
+  light**, as a tug-of-war measured in one unit: lamp reach is a radius in
+  pixels, upgrades add to it (+16 per bought Lamp Array level, +24 per in-run
+  Arc Lamp) and every descent takes 9 away, floored at 64 so it never goes
+  black. Same unit on both sides on purpose — percentages make the two forces
+  incomparable, while in pixels the trade reads straight off: one Lamp Array
+  level buys back most of two descents. Early depths don't need the upgrades
+  and the deep floors can't be worked without them.
 - **The dive bell** is the extraction decision point: leave with what you have,
   or descend to the next wreck with dwindling oxygen.
 

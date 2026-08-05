@@ -19,7 +19,9 @@ const TINTS: Array[Color] = [
 const BASE_SPEED := 90.0
 const BASE_MAX_HP := 100.0
 const BASE_PICKUP_RADIUS := 28.0
-const BASE_LAMP_SCALE := 2.2
+## light.png's drawn radius at scale 1, so a reach in pixels can be turned into
+## a texture_scale. Same trick as sonar_ring.gd's SPRITE_RADIUS.
+const LAMP_SPRITE_RADIUS := 63.5
 const LANCE_TINT := Color(0.55, 0.95, 1.0)
 const SOLAR_TINT := Color(1.0, 0.72, 0.3)
 const DRONE_TEXTURE := preload("res://assets/sprites/drone.png")
@@ -54,6 +56,7 @@ var _pending_offers: Array = []  # server-only queue of offers (Array[Array])
 var _pickup_shape: CircleShape2D
 var _drones: Array[Sprite2D] = []
 var _shake := 0.0
+var _lamp_depth := 0  # depth the lamp was last sized for (0 = not sized yet)
 var _mine_accum := 0.0
 
 
@@ -103,6 +106,13 @@ func _physics_process(delta: float) -> void:
 
 	if game == null or game.game_over or dead:
 		return
+
+	# Descending narrows the lamp, and depth moves mid-run — on clients it
+	# arrives through the mirrored HUD state, so every peer watches it rather
+	# than being told.
+	if _lamp_depth != game.depth:
+		_lamp_depth = game.depth
+		_update_lamp()
 
 	if is_local():
 		velocity = Vector2.ZERO
@@ -245,8 +255,19 @@ func _apply_passives() -> void:
 	move_speed = BASE_SPEED * meta_speed * pow(1.10, passives.get("fins", 0))
 	max_hp = BASE_MAX_HP + Station.HULL_PER_LEVEL * int(meta.get("hull", 0)) \
 			+ 20.0 * passives.get("suit", 0)
-	$Lamp.texture_scale = BASE_LAMP_SCALE * pow(1.25, passives.get("lamp", 0))
+	_update_lamp()
 	_pickup_shape.radius = BASE_PICKUP_RADIUS * pow(1.4, passives.get("magnet", 0))
+
+
+## Lamp reach, in pixels: what's bought plus what's picked up, minus what the
+## depth has swallowed (GameRules.lamp_radius). Depth is the only term that
+## changes mid-run, which is why this is its own function.
+func _update_lamp() -> void:
+	var reach := GameRules.lamp_radius(
+			int(meta.get("lamp", 0)),
+			passives.get("lamp", 0),
+			game.depth if game != null else 1)
+	$Lamp.texture_scale = reach / LAMP_SPRITE_RADIUS
 
 
 # --- Combat (server) -------------------------------------------------------

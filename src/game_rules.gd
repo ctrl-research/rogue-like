@@ -49,6 +49,17 @@ const BOSS_REWARD_BASE := 40  # lair guardian bounty, times depth
 # trash saturates the cap and the boss fight becomes a crowd.
 const BOSS_WAVE_HEADROOM := 24
 
+# Lamp reach, in pixels, as a tug-of-war. Everything here is the same unit on
+# purpose: percentages made the two forces incomparable, because "+10% radius"
+# and "-6% per depth" only relate to each other through a base you have to go
+# and look up. In pixels you can read the trade straight off — one Lamp Array
+# level buys back most of two descents.
+const LAMP_BASE_RADIUS := 136.0
+const LAMP_ARRAY_RADIUS := 16.0  # per bought Lamp Array level (5 max: +80)
+const ARC_LAMP_RADIUS := 24.0  # per in-run Arc Lamp level (5 max: +120)
+const LAMP_DEPTH_LOSS := 9.0  # swallowed per descent
+const LAMP_MIN_RADIUS := 64.0  # four cells: tight, still playable
+
 
 static func xp_needed(level: int) -> int:
 	return 4 + level * 3
@@ -72,6 +83,19 @@ static func boss_reward(depth: int) -> int:
 
 static func is_boss_depth(depth: int) -> bool:
 	return depth % BOSS_DEPTH_INTERVAL == 0
+
+
+## How far a lamp reaches, in pixels: what you've bought and picked up, minus
+## what the trench has swallowed on the way down. Early on the stock lamp is
+## plenty and by the deep floors it isn't, which is the whole point — but it is
+## floored, because light going to nothing stops being tension and becomes a
+## black screen with a dead crew in it.
+static func lamp_radius(bought_levels: int, picked_levels: int, depth: int) -> float:
+	var reach := LAMP_BASE_RADIUS \
+			+ LAMP_ARRAY_RADIUS * bought_levels \
+			+ ARC_LAMP_RADIUS * picked_levels \
+			- LAMP_DEPTH_LOSS * maxi(0, depth - 1)
+	return maxf(LAMP_MIN_RADIUS, reach)
 
 
 static func depth_hp_scale(depth: int) -> float:
