@@ -1,39 +1,33 @@
 extends Control
-## Title screen + lobby. Online co-op (room codes over WebRTC) works on web
-## and desktop; LAN (ENet) is desktop-only. On web, opening a shared
+## Title screen: connect (solo / online room codes / LAN) and board the sub.
+## The walkable sub interior (sub.tscn) is the lobby and the station shop —
+## this screen only gets the crew connected. On web, opening a shared
 ## `#room=CODE` URL auto-joins that room.
 
 var _menu_box: VBoxContainer
-var _lobby_box: VBoxContainer
 var _status: Label
-var _divers: Label
-var _room_label: Label
-var _share_label: Label
-var _copy_btn: Button
-var _start_btn: Button
+var _summary: Label
 var _address: LineEdit
 var _code_edit: LineEdit
-var _share_url := ""
-var _station_box: VBoxContainer
-var _bank_label: Label
-var _station_rows: VBoxContainer
 
 
 func _ready() -> void:
 	Net.status_changed.connect(func(text: String) -> void: _status.text = text)
-	Net.player_count_changed.connect(_refresh_lobby)
 	Net.entered_lobby.connect(_on_entered_lobby)
-	Net.session_ended.connect(_on_session_ended)
-	Station.changed.connect(_refresh_station)
+	Net.session_ended.connect(func() -> void: _menu_box.visible = true)
+	Station.changed.connect(_refresh_summary)
 	_build()
-	_refresh_station()
+	_refresh_summary()
 	if Net.is_online:
-		# Returning from a run with the session still alive: straight back
-		# into the crew lobby (shop, regroup, dive again).
-		_on_entered_lobby(Net.room_code, multiplayer.is_server())
-		_status.text = "Back at the station — spend salvage, then dive again."
+		# Returning here with a live session (edge path): the sub is home.
+		get_tree().change_scene_to_file(Net.SUB_SCENE)
 	else:
 		_try_auto_join_from_url()
+
+
+## Connected (or hosting): board the sub — it's the lobby from here on.
+func _on_entered_lobby(_room: String, _is_host: bool) -> void:
+	get_tree().change_scene_to_file(Net.SUB_SCENE)
 
 
 func _build() -> void:
@@ -62,6 +56,12 @@ func _build() -> void:
 	subtitle.modulate = Color(0.5, 0.62, 0.72)
 	box.add_child(subtitle)
 
+	_summary = Label.new()
+	_summary.add_theme_font_size_override("font_size", 8)
+	_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_summary.modulate = Color(0.95, 0.85, 0.4)
+	box.add_child(_summary)
+
 	box.add_child(HSeparator.new())
 
 	_menu_box = VBoxContainer.new()
@@ -69,7 +69,7 @@ func _build() -> void:
 	box.add_child(_menu_box)
 
 	var solo := Button.new()
-	solo.text = "DIVE SOLO"
+	solo.text = "BOARD THE SUB — SOLO"
 	solo.pressed.connect(func() -> void: Net.start_solo())
 	_menu_box.add_child(solo)
 
@@ -122,65 +122,6 @@ func _build() -> void:
 		join_lan.pressed.connect(func() -> void: Net.join_lan(_address.text))
 		lan_row.add_child(join_lan)
 
-	_lobby_box = VBoxContainer.new()
-	_lobby_box.add_theme_constant_override("separation", 6)
-	_lobby_box.visible = false
-	box.add_child(_lobby_box)
-
-	_room_label = Label.new()
-	_room_label.add_theme_font_size_override("font_size", 18)
-	_room_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_room_label.modulate = Color(0.95, 0.85, 0.4)
-	_lobby_box.add_child(_room_label)
-
-	_share_label = Label.new()
-	_share_label.add_theme_font_size_override("font_size", 8)
-	_share_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_share_label.modulate = Color(0.5, 0.62, 0.72)
-	_lobby_box.add_child(_share_label)
-
-	_copy_btn = Button.new()
-	_copy_btn.text = "COPY INVITE LINK"
-	_copy_btn.visible = false
-	_copy_btn.pressed.connect(_copy_share_url)
-	_lobby_box.add_child(_copy_btn)
-
-	_divers = Label.new()
-	_divers.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_lobby_box.add_child(_divers)
-
-	_start_btn = Button.new()
-	_start_btn.text = "START DIVE"
-	_start_btn.pressed.connect(func() -> void: Net.start_dive())
-	_lobby_box.add_child(_start_btn)
-
-	var leave := Button.new()
-	leave.text = "LEAVE"
-	leave.pressed.connect(func() -> void: Net.leave())
-	_lobby_box.add_child(leave)
-
-	# Station shopping is available on the title screen AND in the crew
-	# lobby between dives — that's when the banked salvage burns a hole.
-	box.add_child(HSeparator.new())
-	var station_toggle := Button.new()
-	station_toggle.text = "STATION UPGRADES"
-	station_toggle.toggle_mode = true
-	station_toggle.toggled.connect(func(on: bool) -> void: _station_box.visible = on)
-	box.add_child(station_toggle)
-
-	_station_box = VBoxContainer.new()
-	_station_box.add_theme_constant_override("separation", 4)
-	_station_box.visible = false
-	box.add_child(_station_box)
-	_bank_label = Label.new()
-	_bank_label.add_theme_font_size_override("font_size", 10)
-	_bank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_bank_label.modulate = Color(0.95, 0.85, 0.4)
-	_station_box.add_child(_bank_label)
-	_station_rows = VBoxContainer.new()
-	_station_rows.add_theme_constant_override("separation", 2)
-	_station_box.add_child(_station_rows)
-
 	_status = Label.new()
 	_status.add_theme_font_size_override("font_size", 9)
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -190,142 +131,9 @@ func _build() -> void:
 	box.add_child(_status)
 
 
-func _refresh_station() -> void:
-	if _station_rows == null:
-		return
-	_bank_label.text = "DAY %d  —  BANKED SALVAGE: %d  —  DIVING AS %s" % [
+func _refresh_summary() -> void:
+	_summary.text = "DAY %d  —  BANKED SALVAGE: %d  —  DIVING AS %s" % [
 		Station.day, Station.bank, Divers.DIVERS[Station.diver].title]
-	for child in _station_rows.get_children():
-		child.queue_free()
-
-	var divers_header := Label.new()
-	divers_header.text = "DIVERS"
-	divers_header.add_theme_font_size_override("font_size", 8)
-	divers_header.modulate = Color(0.62, 0.9, 1.0)
-	_station_rows.add_child(divers_header)
-	for id in Divers.DIVERS:
-		var spec: Dictionary = Divers.DIVERS[id]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		var info := Label.new()
-		info.text = "%s — %s" % [spec.title, spec.desc]
-		info.add_theme_font_size_override("font_size", 8)
-		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(info)
-		var btn := Button.new()
-		btn.add_theme_font_size_override("font_size", 8)
-		if Station.diver == id:
-			btn.text = "SELECTED"
-			btn.disabled = true
-		elif Station.diver_unlocked(id):
-			btn.text = "SELECT"
-			btn.pressed.connect(func() -> void: Station.select_diver(id))
-		else:
-			btn.text = "BUY %d" % int(spec.cost)
-			btn.disabled = not Station.can_buy_diver(id)
-			btn.pressed.connect(func() -> void: Station.buy_diver(id))
-		row.add_child(btn)
-		_station_rows.add_child(row)
-
-	var upgrades_header := Label.new()
-	upgrades_header.text = "UPGRADES"
-	upgrades_header.add_theme_font_size_override("font_size", 8)
-	upgrades_header.modulate = Color(0.62, 0.9, 1.0)
-	_station_rows.add_child(upgrades_header)
-	for id in Station.UPGRADES:
-		var spec: Dictionary = Station.UPGRADES[id]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		var info := Label.new()
-		info.text = "%s Lv%d/%d — %s" % [spec.title, Station.level(id), spec.max, spec.desc]
-		info.add_theme_font_size_override("font_size", 8)
-		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(info)
-		var buy := Button.new()
-		buy.add_theme_font_size_override("font_size", 8)
-		if Station.level(id) >= int(spec.max):
-			buy.text = "MAX"
-			buy.disabled = true
-		else:
-			buy.text = "BUY %d" % Station.cost(id)
-			buy.disabled = not Station.can_buy(id)
-			buy.pressed.connect(func() -> void: Station.buy(id))
-		row.add_child(buy)
-		_station_rows.add_child(row)
-
-	var winch_header := Label.new()
-	winch_header.text = "WINCH — DIVE FROM"
-	winch_header.add_theme_font_size_override("font_size", 8)
-	winch_header.modulate = Color(0.62, 0.9, 1.0)
-	_station_rows.add_child(winch_header)
-	var winch_row := HBoxContainer.new()
-	winch_row.add_theme_constant_override("separation", 6)
-	for d in Station.start_depths():
-		var depth_btn := Button.new()
-		depth_btn.add_theme_font_size_override("font_size", 8)
-		depth_btn.text = "DEPTH %d" % d
-		if Station.dive_depth == d:
-			depth_btn.text += " *"
-			depth_btn.disabled = true
-		depth_btn.pressed.connect(func() -> void: Station.select_dive_depth(d))
-		winch_row.add_child(depth_btn)
-	var next_tier := Station.winch + 1
-	var next_lair := next_tier * GameRules.BOSS_DEPTH_INTERVAL
-	var refit := Button.new()
-	refit.add_theme_font_size_override("font_size", 8)
-	if Station.cleared_lair >= next_lair:
-		refit.text = "REFIT: START AT %d — BUY %d" % [next_lair + 1, Station.winch_cost(next_tier)]
-		refit.disabled = not Station.can_buy_winch()
-		refit.pressed.connect(func() -> void: Station.buy_winch())
-	else:
-		refit.text = "NEXT REFIT: CLEAR THE DEPTH-%d LAIR" % next_lair
-		refit.disabled = true
-	winch_row.add_child(refit)
-	_station_rows.add_child(winch_row)
-
-
-func _on_entered_lobby(room: String, is_host: bool) -> void:
-	_menu_box.visible = false
-	_lobby_box.visible = true
-	_start_btn.visible = is_host
-	if room.is_empty():
-		_room_label.text = "LAN LOBBY"
-		_share_label.text = "friends join with your IP, port %d" % Net.DEFAULT_PORT
-	else:
-		_room_label.text = "ROOM  %s" % room
-		_share_url = _build_share_url(room)
-		if _share_url.is_empty():
-			_share_label.text = "friends press JOIN ONLINE and enter the code"
-		else:
-			_share_label.text = _share_url
-			_copy_btn.visible = true
-	_refresh_lobby()
-
-
-func _refresh_lobby() -> void:
-	_divers.text = "divers ready: %d / %d" % [Net.player_count(), Net.MAX_PLAYERS]
-
-
-func _on_session_ended() -> void:
-	_lobby_box.visible = false
-	_menu_box.visible = true
-	_copy_btn.visible = false
-
-
-func _build_share_url(room: String) -> String:
-	if not OS.has_feature("web"):
-		return ""
-	var base: Variant = JavaScriptBridge.eval("window.location.origin + window.location.pathname", true)
-	if base is String and not (base as String).is_empty():
-		return "%s#room=%s" % [base, room]
-	return ""
-
-
-func _copy_share_url() -> void:
-	if _share_url.is_empty():
-		return
-	DisplayServer.clipboard_set(_share_url)
-	_copy_btn.text = "LINK COPIED!"
 
 
 ## On web, a shared invite URL like .../#room=ABCDE joins that room directly.

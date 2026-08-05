@@ -431,8 +431,8 @@ func _build() -> void:
 	_over_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_over_sub)
 	_over_station_btn = Button.new()
-	_over_station_btn.text = "RETURN TO STATION"
-	_over_station_btn.pressed.connect(func() -> void: Net.leave())
+	_over_station_btn.text = "RETURN TO THE SUB"
+	_over_station_btn.pressed.connect(func() -> void: Net.return_to_lobby())
 	box.add_child(_over_station_btn)
 	_over_lobby_btn = Button.new()
 	_over_lobby_btn.text = "BACK TO LOBBY — DIVE AGAIN"
