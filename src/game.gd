@@ -487,7 +487,8 @@ func _spawn_loot(data: Variant) -> Node:
 	if LOOT_BEACON.has(data.kind):
 		# The bell is the way out, so it burns brighter and further than the
 		# rest — it should be findable from across a dark site.
-		var bright := data.kind == "bell"
+		# Explicit bool: data is a Variant, so `:=` cannot infer a comparison on it.
+		var bright: bool = data.kind == "bell"
 		Fx.attach_beacon(node, LOOT_BEACON[data.kind],
 				1.15 if bright else 0.8, 1.1 if bright else 0.6)
 	return node
