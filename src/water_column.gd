@@ -21,9 +21,12 @@ const FAR_FACTOR := 1.2
 const NEAR_DRIFT := Vector2(-7.0, 3.5)
 const FAR_DRIFT := Vector2(-3.0, 1.5)
 
+# Lighter than it was: with the ambient crushed for light-based visibility the
+# dark already does most of this job, and a heavy vignette on top just fights
+# the lamp.
 const HAZE_NEAR := Color(0.03, 0.07, 0.10)  # colour of the closing dark
-const HAZE_MIN_ALPHA := 0.30  # vignette at the surface
-const HAZE_MAX_ALPHA := 0.58  # vignette deep down
+const HAZE_MIN_ALPHA := 0.14  # vignette at the surface
+const HAZE_MAX_ALPHA := 0.34  # vignette deep down
 const HAZE_DEPTH_SPAN := 8.0  # depths over which the murk thickens
 
 var _near: Sprite2D
