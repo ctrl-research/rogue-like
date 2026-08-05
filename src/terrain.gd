@@ -26,14 +26,16 @@ const ORE_PLACEMENT_TRIES := 40  # sampling attempts to find rock per pocket
 const EDGE_TEXTURE := preload("res://assets/sprites/rock_edge.png")
 const FACE_TEXTURE := preload("res://assets/sprites/rock_face.png")
 const GROWTH_TEXTURE := preload("res://assets/sprites/rock_growth.png")
-const WEED_TEXTURE := preload("res://assets/sprites/rock_weed.png")
 const TUFT_TEXTURE := preload("res://assets/sprites/rock_tuft.png")
 const EDGE_MASKS := 8  # atlas columns: exposure bitmask N|W|E
 const GROWTH_VARIANTS := 4
-const WEED_VARIANTS := 4
 const TUFT_COLUMNS := 3  # west, east, both
 const GROWTH_CHANCE := 50  # percent of exposed lips that sprout an overhang
-const WEED_CHANCE := 34  # percent of rock tops carrying a weed mat
+# How far the overhang layer sits below its rock cell. The moss crest occupies
+# the first few rows of the tile and has to stay on the rock, so this is the
+# cell height less that crest — everything past it is free to hang, which is
+# what sets the maximum drape (12px, well past the 7px wall front).
+const GROWTH_DROP := 12
 const TUFT_CHANCE := 44  # percent of exposed side rims collecting tufts
 
 ## Server broadcasts destruction; ore cells also announce themselves here so
@@ -44,7 +46,6 @@ var initial_ore_cells := 0  # determinism fingerprint (see e2e)
 
 var _edges: TileMapLayer  # lit rims on exposed north/west/east sides
 var _faces: TileMapLayer  # the wall front, in the open cell below a rock
-var _weed: TileMapLayer  # mats bedded flat on the rock tops
 var _tufts: TileMapLayer  # growth clinging to exposed side rims
 var _growth: TileMapLayer  # weed overhanging a lip, straddling the edge
 
@@ -68,14 +69,13 @@ func _ready() -> void:
 	_edges = _add_dressing_layer(EDGE_TEXTURE, EDGE_MASKS, Vector2.ZERO)
 	# A whole cell down, so a wall's front lands in the open cell below it.
 	_faces = _add_dressing_layer(FACE_TEXTURE, VARIANTS + 1, Vector2(0, CELL))
-	# Growth on the rock's own plane: mats bedded flat on the top face, tufts
-	# fringing the side rims. Both stay within their own cell, so they never
-	# collide with a face — only the overhang below has to be drawn last.
-	_weed = _add_dressing_layer(WEED_TEXTURE, WEED_VARIANTS, Vector2.ZERO)
+	# Tufts fringe the side rims. They stay inside their own cell, so they
+	# never collide with a face — only the overhang below is drawn last.
 	_tufts = _add_dressing_layer(TUFT_TEXTURE, TUFT_COLUMNS, Vector2.ZERO)
-	# Half a cell down, so the overhang straddles the lip and dangles over
-	# the front — this is what breaks the tile grid's silhouette.
-	_growth = _add_dressing_layer(GROWTH_TEXTURE, GROWTH_VARIANTS, Vector2(0, CELL / 2))
+	# Dropped most of a cell, so only the moss crest still sits on the rock and
+	# the rest of the tile is below the lip — this is what caps how far a frond
+	# can trail, and the drape is what breaks the tile grid's silhouette.
+	_growth = _add_dressing_layer(GROWTH_TEXTURE, GROWTH_VARIANTS, Vector2(0, GROWTH_DROP))
 
 
 func _add_dressing_layer(texture: Texture2D, columns: int, offset: Vector2) -> TileMapLayer:
@@ -165,7 +165,7 @@ func _is_ore(cell: Vector2i) -> bool:
 
 
 func _dress_all() -> void:
-	for layer in [_edges, _faces, _weed, _tufts, _growth]:
+	for layer in [_edges, _faces, _tufts, _growth]:
 		layer.clear()
 	for cell in get_used_cells():
 		_dress_cell(cell)
@@ -176,7 +176,7 @@ func _dress_all() -> void:
 ## growth that hangs over the edge. Keyed off the cell coordinates, so every
 ## peer arrives at the same dressing without a word over the network.
 func _dress_cell(cell: Vector2i) -> void:
-	for layer in [_edges, _faces, _weed, _tufts, _growth]:
+	for layer in [_edges, _faces, _tufts, _growth]:
 		layer.erase_cell(cell)
 	if get_cell_source_id(cell) == -1:
 		return
@@ -193,11 +193,6 @@ func _dress_cell(cell: Vector2i) -> void:
 		mask |= 4
 	if mask > 0:
 		_edges.set_cell(cell, 0, Vector2i(mask, 0))
-
-	# Mats bed on any rock top, buried or not — but never on ore, so a seam
-	# stays legible as something worth digging for.
-	if not is_ore and _dress_hash(cell, 23, 41) % 100 < WEED_CHANCE:
-		_weed.set_cell(cell, 0, Vector2i(_dress_hash(cell, 3, 19) % WEED_VARIANTS, 0))
 
 	# Tufts fringe whichever side rims meet open water.
 	if (west_open or east_open) and _dress_hash(cell, 37, 29) % 100 < TUFT_CHANCE:
