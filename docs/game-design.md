@@ -81,7 +81,10 @@ around it.
   model). Skill expression = movement, kiting, objective routing.
 - Weapon families (harpoon launcher, arc lance, depth-charge dropper, drone
   swarm, sonar pulse…) each with a level track; combining maxed weapons with
-  matching gear evolves them (VS-style evolutions).
+  matching gear evolves them (VS-style evolutions). **Every** weapon has an
+  evolution, and passives are shared between them on purpose — a passive is a
+  build archetype, so committing to magnet opens both the harpoon and drone
+  evolutions rather than gating exactly one card.
 - Passive gear: fins (move speed), pressure suit (armor), rebreather (oxygen
   efficiency), lamp (light radius), magnet (pickup radius).
 
@@ -235,8 +238,7 @@ terrain are untouched by it.
 
 - Terrain follow-ups: rooms/wreck structures (not just noise caves), enemy
   dig variety (burrowers that tunnel toward you).
-- More evolutions (drone/sonar/cutter/drill have none yet); more boss
-  varieties beyond the first lair guardian (M8).
+- More boss varieties beyond the first lair guardian (M8).
 
 ### Feel/polish pass
 
