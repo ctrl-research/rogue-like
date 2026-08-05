@@ -98,11 +98,13 @@ func _process(delta: float) -> void:
 						break
 
 	# If the bot can't fight its way onto the bell (the Maw camps it), warp
-	# it there so the descend/extract flow still gets exercised.
+	# it there so the descend/extract flow still gets exercised. The grace is
+	# short: at the depth-5 lair the bot has died mid-walk and taken the whole
+	# extract-and-bank path out of that run's coverage.
 	if multiplayer.is_server() and _game.quest_done and not _game.awaiting_choice \
 			and not _game.game_over:
 		_bell_wait += delta
-		if _bell_wait > 25.0 and not _player.dead and not _player.downed:
+		if _bell_wait > 10.0 and not _player.dead and not _player.downed:
 			var bell := _nearest_in_group("bell", _player.global_position, INF)
 			if bell != null:
 				_player.teleport(bell.global_position)

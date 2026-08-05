@@ -592,7 +592,8 @@ func _spawn_waves(delta: float) -> void:
 			interval *= GameRules.SWARM_SPAWN_SCALE
 		elif quest_kind == "repair":
 			interval *= GameRules.REPAIR_SPAWN_SCALE
-	if _spawn_accum < interval or enemies.get_child_count() >= GameRules.ENEMY_CAP:
+	var wave_cap := _wave_cap()
+	if _spawn_accum < interval or enemies.get_child_count() >= wave_cap:
 		return
 	_spawn_accum = 0.0
 
@@ -603,7 +604,7 @@ func _spawn_waves(delta: float) -> void:
 	var hp_scale := (1.0 + 0.35 * (Net.player_count() - 1)) * GameRules.depth_hp_scale(depth)
 	var brute_chance := minf(0.35, elapsed / 600.0) + GameRules.depth_brute_bonus(depth)
 	for i in count:
-		if enemies.get_child_count() >= GameRules.ENEMY_CAP:
+		if enemies.get_child_count() >= wave_cap:
 			break
 		var anchor: Player = alive[_rng.randi() % alive.size()]
 		var angle := _rng.randf() * TAU
@@ -612,6 +613,15 @@ func _spawn_waves(delta: float) -> void:
 		pos = pos.clamp(Vector2(24, 24), GameRules.ARENA_SIZE - Vector2(24, 24))
 		pos = terrain.find_open_near(pos)
 		$EnemySpawner.spawn({"kind": _roll_kind(brute_chance), "pos": pos, "hp_scale": hp_scale})
+
+
+## Ceiling for ordinary wave spawns. A lair keeps slots in reserve: the
+## guardian's summons come through _spawn_enemy_deferred against the hard cap,
+## so without this the trash crowds the boss's own mechanic out of existence.
+func _wave_cap() -> int:
+	if quest_kind == "boss" and not quest_done:
+		return GameRules.ENEMY_CAP - GameRules.BOSS_WAVE_HEADROOM
+	return GameRules.ENEMY_CAP
 
 
 ## Weighted spawn table; the deep gets stranger with time and depth.
