@@ -2,8 +2,16 @@ extends CanvasLayer
 ## In-run HUD. Reads mirrored state off the Game node every frame; all
 ## controls are built in code so the scene file stays trivial.
 
-# Compass points for the hunt quest's bearing, clockwise from +X (y-down).
-const BEARINGS: Array[String] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"]
+const ARROW_TEXTURE := preload("res://assets/sprites/arrow.png")
+
+# Off-screen markers: arrows pinned inside the screen edge.
+const MARKER_MARGIN := 20.0  # inset from the viewport edge, in pixels
+const MARKER_POOL := 8  # reused nodes; caps how many arrows can show at once
+const MAX_OBJECTIVE_MARKERS := 3  # six crates of arrows would be noise
+const OBJECTIVE_TINT := Color(0.95, 0.85, 0.4)
+const THREAT_TINT := Color(1.0, 0.45, 0.4)
+const BELL_TINT := Color(0.55, 1.0, 0.75)
+const DOWNED_TINT := Color(1.0, 0.35, 0.55)
 
 var _game  # the Game node; untyped for dynamic access to its mirrored state
 var _local: Player  # this peer's diver, once spawned
@@ -38,6 +46,7 @@ var _over_leave_btn: Button
 var _over_wait: Label
 var _boss_bar: ProgressBar
 var _boss_label: Label
+var _markers: Array[Node2D] = []
 
 
 func _ready() -> void:
@@ -87,6 +96,8 @@ func _process(_delta: float) -> void:
 	if boss != null:
 		_boss_bar.max_value = boss.max_hp
 		_boss_bar.value = boss.hp
+
+	_update_markers()
 
 	var deciding: bool = _game.awaiting_choice and not _game.game_over
 	_choice_box.visible = deciding and multiplayer.is_server()
@@ -174,7 +185,8 @@ func _rank_text(id: String) -> String:
 	return "Lv %d > %d" % [lvl, lvl + 1]
 
 
-## The quest line in the top-right corner, per this depth's objective.
+## The quest line in the top-right corner, per this depth's objective. Where
+## the thing actually IS comes from the edge arrows (see _update_markers).
 func _objective_text() -> String:
 	if _game.quest_done:
 		return "GET TO THE BELL"
@@ -183,33 +195,93 @@ func _objective_text() -> String:
 			var left := int(ceilf(_game.quest_progress))
 			return "SURVIVE %d:%02d" % [left / 60, left % 60]
 		"hunt":
-			return "HUNT THE BEAST%s" % _bearing_to(_find_beast(), " — IT'S HERE")
+			return "HUNT THE BEAST"
 		"repair":
-			var pct := int(100.0 * _game.quest_progress / GameRules.REPAIR_TIME)
-			return "REPAIR %d%%%s" % [pct, _bearing_to(_find_in_loot("relay"), "")]
+			return "REPAIR %d%%" % int(100.0 * _game.quest_progress / GameRules.REPAIR_TIME)
 		"escort":
 			if _local != null and _local.towing:
-				return "TOW TO THE BELL ZONE%s" % _bearing_offset(
-						GameRules.ARENA_SIZE / 2.0 - _local.global_position, "")
-			return "GRAB THE PAYLOAD%s" % _bearing_to(_find_in_loot("payload"), " — IT'S HERE")
+				return "TOW TO THE BELL ZONE"
+			return "GRAB THE PAYLOAD"
 		"boss":
-			return "SLAY THE WARDEN%s" % _bearing_to(_find_boss(), "")
+			return "SLAY THE WARDEN"
 		_:
 			return "SALVAGE %d/%d" % [GameRules.CRATE_COUNT - _game.crates_left, GameRules.CRATE_COUNT]
 
 
-## Compass bearing + range from the local diver to a replicated node.
-func _bearing_to(target: Node2D, here_text: String) -> String:
-	if _local == null or target == null:
-		return ""
-	return _bearing_offset(target.global_position - _local.global_position, here_text)
+# --- Off-screen markers -------------------------------------------------------
 
 
-func _bearing_offset(offset: Vector2, here_text: String) -> String:
-	var dist := int(offset.length() / Terrain.CELL)
-	if dist < 8:
-		return here_text
-	return " %s %dm" % [BEARINGS[wrapi(roundi(offset.angle() / (TAU / 8.0)), 0, 8)], dist]
+## Arrows pinned to the screen edge, pointing at what matters off-camera: the
+## objective, and any crewmate bleeding out. A target that's already on screen
+## needs no arrow — you can see it.
+func _update_markers() -> void:
+	var targets := [] if _game.game_over or _local == null else _marker_targets()
+	var to_screen := get_viewport().get_canvas_transform()
+	var center := get_viewport_rect().size / 2.0
+	var half := center - Vector2.ONE * MARKER_MARGIN
+	for i in _markers.size():
+		var marker := _markers[i]
+		if i >= targets.size():
+			marker.visible = false
+			continue
+		var target: Dictionary = targets[i]
+		var pos: Vector2 = target.pos
+		var offset := to_screen * pos - center
+		if absf(offset.x) < half.x and absf(offset.y) < half.y:
+			marker.visible = false  # on camera already
+			continue
+		# Slide out along the bearing until we meet the screen edge.
+		var reach := INF
+		if absf(offset.x) > 0.001:
+			reach = minf(reach, half.x / absf(offset.x))
+		if absf(offset.y) > 0.001:
+			reach = minf(reach, half.y / absf(offset.y))
+		marker.visible = true
+		marker.position = center + offset * reach
+		marker.modulate = target.color
+		(marker.get_node("Arrow") as Sprite2D).rotation = offset.angle()
+		var range_m := int(_local.global_position.distance_to(pos) / Terrain.CELL)
+		(marker.get_node("Range") as Label).text = "%dm" % range_m
+
+
+## Nearest objectives first, with downed crew ahead of everything — the
+## bleed-out clock is shorter than any quest.
+func _marker_targets() -> Array:
+	var out: Array = []
+	if _game.quest_done:
+		for bell in get_tree().get_nodes_in_group("bell"):
+			out.append({"pos": (bell as Node2D).global_position, "color": BELL_TINT})
+	else:
+		match _game.quest_kind:
+			"crates":
+				for crate in get_tree().get_nodes_in_group("crates"):
+					if not crate.is_queued_for_deletion():
+						out.append({"pos": (crate as Node2D).global_position, "color": OBJECTIVE_TINT})
+			"hunt":
+				_append_target(out, _find_beast(), THREAT_TINT)
+			"boss":
+				_append_target(out, _find_boss(), THREAT_TINT)
+			"repair":
+				_append_target(out, _find_in_loot("relay"), OBJECTIVE_TINT)
+			"escort":
+				if _local.towing:
+					out.append({"pos": GameRules.ARENA_SIZE / 2.0, "color": OBJECTIVE_TINT})
+				else:
+					_append_target(out, _find_in_loot("payload"), OBJECTIVE_TINT)
+	var here := _local.global_position
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return here.distance_squared_to(a.pos) < here.distance_squared_to(b.pos))
+	if out.size() > MAX_OBJECTIVE_MARKERS:
+		out.resize(MAX_OBJECTIVE_MARKERS)
+	for p in _game.players.get_children():
+		if p is Player and p.downed and not p.dead and p != _local:
+			out.push_front({"pos": (p as Player).global_position, "color": DOWNED_TINT})
+	return out
+
+
+func _append_target(out: Array, node: Node2D, color: Color) -> void:
+	if node != null:
+		out.append({"pos": node.global_position, "color": color})
 
 
 func _find_beast() -> Enemy:
@@ -263,6 +335,25 @@ func _build() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# The marker pool is added before everything else: siblings draw in order,
+	# so the readouts and panels that follow sit over the arrows, not under.
+	for i in MARKER_POOL:
+		var marker := Node2D.new()
+		marker.visible = false
+		var arrow := Sprite2D.new()
+		arrow.name = "Arrow"
+		arrow.texture = ARROW_TEXTURE
+		marker.add_child(arrow)
+		var range_label := _label("", 7)
+		range_label.name = "Range"
+		range_label.position = Vector2(-16, 6)
+		range_label.size = Vector2(32, 10)
+		range_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		marker.add_child(range_label)
+		add_child(marker)
+		_markers.append(marker)
+
 	add_child(root)
 
 	var hull := _label("HULL", 8)
