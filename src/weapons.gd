@@ -58,11 +58,21 @@ const WEAPONS := {
 ## Maxing a weapon while owning its paired passive unlocks an evolution
 ## (offered as a special card; the weapon jumps to EVOLVED_LEVEL).
 const EVOLVED_LEVEL := 6
+## Every weapon can evolve, and passives are deliberately shared between them:
+## a passive is a build archetype, so committing to magnet opens the harpoon
+## AND the drone evolution rather than gating exactly one card.
 const EVOLUTIONS := {
 	"harpoon": {"requires": "magnet", "title": "CHAIN HARPOON", "desc": "Bolts arc between prey"},
 	"lance": {"requires": "lamp", "title": "SOLAR LANCE", "desc": "A spear of burning light"},
 	"charge": {"requires": "suit", "title": "PRESSURE BOMB", "desc": "Implodes and stuns the deep"},
+	"drone": {"requires": "magnet", "title": "WRECKING SWARM", "desc": "More drones, wider bite"},
+	"sonar": {"requires": "lamp", "title": "PRESSURE BLOOM", "desc": "A wave that stuns and hurls"},
+	"cutter": {"requires": "suit", "title": "MAELSTROM CUTTER", "desc": "Slashes all around you"},
+	"drill": {"requires": "fins", "title": "TECTONIC DRILL", "desc": "Chews wider rock and bone"},
 }
+
+const EVOLVED_DRONES := 7  # WRECKING SWARM: two past the level cap
+const EVOLVED_DRONE_RANGE := 26.0  # vs DRONE_HIT_RANGE
 
 const PASSIVES := {
 	"fins": {"title": "STREAMLINED FINS", "desc": "+10% move speed"},

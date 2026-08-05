@@ -205,12 +205,16 @@ func _wire_player() -> void:
 		if p is Player and p.peer_id == multiplayer.get_unique_id():
 			_player = p
 			_player.upgrade_offered.connect(_on_offer)
-			# Preload a maxed harpoon + magnet so the evolution card (and the
-			# chain-harpoon behavior) is exercised from the first level-up,
-			# plus a drill so wandering into rock exercises destruction.
+			# Preload maxed harpoon AND drone against a magnet, so the run
+			# exercises two evolution cards back to back — magnet pairs with
+			# both, and the bot always takes the jackpot card. That covers the
+			# evolved firing branches plus the larger drone flock. Also a drill,
+			# so wandering into rock exercises destruction.
 			_player.weapons["harpoon"] = GameRules.WEAPON_MAX_LEVEL
+			_player.weapons["drone"] = GameRules.WEAPON_MAX_LEVEL
 			_player.weapons["drill"] = 1
 			_player.passives["magnet"] = 1
+			_player._update_drones()
 			return
 
 

@@ -224,9 +224,12 @@ func apply_pick(id: String) -> void:
 	_update_drones()
 
 
-## Keep one orbiting drone sprite per drone level, on every peer.
+## Keep one orbiting drone sprite per drone level, on every peer. The evolved
+## swarm is a fixed larger flock rather than "one per level", so it doesn't
+## depend on EVOLVED_LEVEL happening to be the next number up.
 func _update_drones() -> void:
-	var want := weapons.get("drone", 0) as int
+	var level := weapons.get("drone", 0) as int
+	var want := Weapons.EVOLVED_DRONES if level >= Weapons.EVOLVED_LEVEL else level
 	while _drones.size() < want:
 		var drone := Sprite2D.new()
 		drone.texture = DRONE_TEXTURE
@@ -333,23 +336,30 @@ func _fire_weapon(id: String) -> bool:
 			else:
 				game.drop_charge(target.global_position, dmg, radius)
 		"drone":
-			# Contact tick: each drone shreds fauna it touches.
+			# Contact tick: each drone shreds fauna it touches. Wrecking Swarm
+			# runs more drones on a wider bite (count comes from _update_drones).
+			var bite := Weapons.EVOLVED_DRONE_RANGE if evolved else DRONE_HIT_RANGE
 			for drone in _drones:
 				for e in get_tree().get_nodes_in_group("enemies"):
 					var enemy := e as Enemy
 					if not enemy.is_queued_for_deletion() \
-							and drone.global_position.distance_to(enemy.global_position) <= DRONE_HIT_RANGE:
+							and drone.global_position.distance_to(enemy.global_position) <= bite:
 						enemy.take_damage(dmg)
 		"sonar":
-			var radius := Weapons.sonar_radius(lvl)
+			# Pressure Bloom: reaches half again as far, hurls harder, and
+			# leaves everything it catches reeling.
+			var radius := Weapons.sonar_radius(lvl) * (1.5 if evolved else 1.0)
+			var shove := 52.0 if evolved else 28.0
 			var any_hit := false
 			for e in get_tree().get_nodes_in_group("enemies"):
 				var enemy := e as Enemy
 				var offset := enemy.global_position - global_position
 				if offset.length() <= radius and not enemy.is_queued_for_deletion():
 					any_hit = true
-					enemy.global_position += offset.normalized() * 28.0
+					enemy.global_position += offset.normalized() * shove
 					enemy.take_damage(dmg)
+					if evolved:
+						enemy.stun(1.0)
 			if not any_hit:
 				return false
 			game.spawn_ring(global_position, radius)
@@ -360,10 +370,17 @@ func _fire_weapon(id: String) -> bool:
 			if target == null:
 				return false
 			var dir := (target.global_position - global_position).normalized()
-			var center := global_position + dir * 22.0
-			_damage_zone(center, 34.0, dmg)
-			game.terrain.destroy_in_radius(center, 10.0)
-			game.spawn_slash(center, dir.angle(), Color(0.85, 0.95, 1.0), 1.1)
+			if evolved:
+				# Maelstrom Cutter: the arc closes into a full sweep around the
+				# diver, which is what makes standing in the horde survivable.
+				_damage_zone(global_position, 52.0, dmg * 1.3)
+				game.terrain.destroy_in_radius(global_position + dir * 18.0, 12.0)
+				game.spawn_slash(global_position, dir.angle(), SOLAR_TINT, 2.0)
+			else:
+				var center := global_position + dir * 22.0
+				_damage_zone(center, 34.0, dmg)
+				game.terrain.destroy_in_radius(center, 10.0)
+				game.spawn_slash(center, dir.angle(), Color(0.85, 0.95, 1.0), 1.1)
 		"drill":
 			# Grinder: rapid ticks in a small zone ahead (movement direction,
 			# falling back to the nearest threat). THE digging tool: fires
@@ -374,12 +391,14 @@ func _fire_weapon(id: String) -> bool:
 				if target == null:
 					return false
 				dir = (target.global_position - global_position).normalized()
-			var center := global_position + dir * 20.0
-			var dug: int = game.terrain.destroy_in_radius(center, 18.0)
-			var hits := _damage_zone(center, 26.0, dmg)
+			# Tectonic Drill: a wider head that tunnels in one pass.
+			var center := global_position + dir * (26.0 if evolved else 20.0)
+			var bore := 30.0 if evolved else 18.0
+			var dug: int = game.terrain.destroy_in_radius(center, bore)
+			var hits := _damage_zone(center, bore + 8.0, dmg)
 			if dug == 0 and hits == 0:
 				return false
-			game.spawn_slash(center, dir.angle(), Color(1.0, 0.75, 0.4), 0.7)
+			game.spawn_slash(center, dir.angle(), Color(1.0, 0.75, 0.4), 1.2 if evolved else 0.7)
 	return true
 
 
