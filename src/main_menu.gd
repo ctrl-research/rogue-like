@@ -253,6 +253,36 @@ func _refresh_station() -> void:
 		row.add_child(buy)
 		_station_rows.add_child(row)
 
+	var winch_header := Label.new()
+	winch_header.text = "WINCH — DIVE FROM"
+	winch_header.add_theme_font_size_override("font_size", 8)
+	winch_header.modulate = Color(0.62, 0.9, 1.0)
+	_station_rows.add_child(winch_header)
+	var winch_row := HBoxContainer.new()
+	winch_row.add_theme_constant_override("separation", 6)
+	for d in Station.start_depths():
+		var depth_btn := Button.new()
+		depth_btn.add_theme_font_size_override("font_size", 8)
+		depth_btn.text = "DEPTH %d" % d
+		if Station.dive_depth == d:
+			depth_btn.text += " *"
+			depth_btn.disabled = true
+		depth_btn.pressed.connect(func() -> void: Station.select_dive_depth(d))
+		winch_row.add_child(depth_btn)
+	var next_tier := Station.winch + 1
+	var next_lair := next_tier * GameRules.BOSS_DEPTH_INTERVAL
+	var refit := Button.new()
+	refit.add_theme_font_size_override("font_size", 8)
+	if Station.cleared_lair >= next_lair:
+		refit.text = "REFIT: START AT %d — BUY %d" % [next_lair + 1, Station.winch_cost(next_tier)]
+		refit.disabled = not Station.can_buy_winch()
+		refit.pressed.connect(func() -> void: Station.buy_winch())
+	else:
+		refit.text = "NEXT REFIT: CLEAR THE DEPTH-%d LAIR" % next_lair
+		refit.disabled = true
+	winch_row.add_child(refit)
+	_station_rows.add_child(winch_row)
+
 
 func _on_entered_lobby(room: String, is_host: bool) -> void:
 	_menu_box.visible = false

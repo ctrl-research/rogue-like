@@ -36,6 +36,8 @@ var _over_lobby_btn: Button
 var _over_disband_btn: Button
 var _over_leave_btn: Button
 var _over_wait: Label
+var _boss_bar: ProgressBar
+var _boss_label: Label
 
 
 func _ready() -> void:
@@ -78,6 +80,13 @@ func _process(_delta: float) -> void:
 	_xp_bar.max_value = _game.xp_needed
 	_xp_bar.value = _game.team_xp
 	_level_label.text = "LV %d" % _game.team_level
+
+	var boss := _find_boss() if _game.quest_kind == "boss" else null
+	_boss_bar.visible = boss != null and not _game.game_over
+	_boss_label.visible = _boss_bar.visible
+	if boss != null:
+		_boss_bar.max_value = boss.max_hp
+		_boss_bar.value = boss.hp
 
 	var deciding: bool = _game.awaiting_choice and not _game.game_over
 	_choice_box.visible = deciding and multiplayer.is_server()
@@ -183,6 +192,8 @@ func _objective_text() -> String:
 				return "TOW TO THE BELL ZONE%s" % _bearing_offset(
 						GameRules.ARENA_SIZE / 2.0 - _local.global_position, "")
 			return "GRAB THE PAYLOAD%s" % _bearing_to(_find_in_loot("payload"), " — IT'S HERE")
+		"boss":
+			return "SLAY THE WARDEN%s" % _bearing_to(_find_boss(), "")
 		_:
 			return "SALVAGE %d/%d" % [GameRules.CRATE_COUNT - _game.crates_left, GameRules.CRATE_COUNT]
 
@@ -204,6 +215,13 @@ func _bearing_offset(offset: Vector2, here_text: String) -> String:
 func _find_beast() -> Enemy:
 	for e in _game.enemies.get_children():
 		if e is Enemy and e.kind == "beast":
+			return e
+	return null
+
+
+func _find_boss() -> Enemy:
+	for e in _game.enemies.get_children():
+		if e is Enemy and e.kind == "warden":
 			return e
 	return null
 
@@ -293,6 +311,21 @@ func _build() -> void:
 	_level_label.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_level_label.position = Vector2(-40, -20)
 	root.add_child(_level_label)
+
+	_boss_label = _label("THE TRENCH WARDEN", 8)
+	_boss_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_boss_label.position = Vector2(-52, 66)  # below the toast band
+	_boss_label.modulate = Color(1.0, 0.45, 0.4)
+	_boss_label.visible = false
+	root.add_child(_boss_label)
+	_boss_bar = ProgressBar.new()
+	_boss_bar.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_boss_bar.position = Vector2(-110, 78)
+	_boss_bar.size = Vector2(220, 8)
+	_boss_bar.show_percentage = false
+	_boss_bar.modulate = Color(1.0, 0.45, 0.4)
+	_boss_bar.visible = false
+	root.add_child(_boss_bar)
 
 	_toast = _label("", 10)
 	_toast.set_anchors_preset(Control.PRESET_CENTER_TOP)

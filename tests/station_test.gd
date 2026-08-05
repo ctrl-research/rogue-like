@@ -46,6 +46,27 @@ func _ready() -> void:
 	Station.load_data()
 	_check(Station.diver_unlocked("lancer"), "diver unlock survives save/load")
 
+	# Winch refits: gated on cleared lairs, cost scales per tier, persists.
+	Station.bank = 500
+	Station.cleared_lair = 0
+	Station.winch = 0
+	Station.dive_depth = 1
+	_check(not Station.can_buy_winch(), "no refit before clearing a lair")
+	Station.record_lair_cleared(5)
+	_check(Station.can_buy_winch(), "refit purchasable after lair clear")
+	_check(Station.winch_cost(1) == 200, "tier-1 refit cost")
+	_check(Station.buy_winch(), "buy refit")
+	_check(Station.winch == 1 and Station.bank == 300, "refit deducts and tiers")
+	var depths := Station.start_depths()
+	_check(depths.size() == 2 and depths[0] == 1 and depths[1] == 6, "start depths surface + 6")
+	_check(not Station.can_buy_winch(), "tier 2 needs the depth-10 lair")
+	_check(not Station.select_dive_depth(11), "cannot select locked depth")
+	_check(Station.select_dive_depth(6), "select unlocked depth")
+	Station.dive_depth = 1
+	Station.winch = 0
+	Station.load_data()
+	_check(Station.winch == 1 and Station.dive_depth == 6, "winch survives save/load")
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()

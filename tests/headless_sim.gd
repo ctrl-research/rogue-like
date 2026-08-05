@@ -17,10 +17,15 @@ var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
-	# Keep the sim's banked salvage out of the developer's real save.
+	# Keep the sim's banked salvage out of the developer's real save, and
+	# start from a clean slate (a loaded real save could carry a winch
+	# checkpoint that would skip the depth-1 crates site).
 	Station._save_path = "user://station_sim.json"
 	Station.bank = 0
 	Station.levels = {}
+	Station.winch = 0
+	Station.cleared_lair = 0
+	Station.dive_depth = 1
 	_rng.randomize()
 	_game = GAME_SCENE.instantiate()
 	add_child(_game)
@@ -43,11 +48,13 @@ func _process(delta: float) -> void:
 	if _steer_cd <= 0.0:
 		_steer_cd = 0.2
 		_steer()
-	# The bot is a poor quest hero, so after a grace period the harness
+	# The bot is a poor quest hero, so shortly into each site the harness
 	# force-completes the objective server-side (crates one per tick, the
-	# beast in one blow; the swarm rides its own timer) to deterministically
-	# reach the bell -> descend -> extract loop.
-	if multiplayer.is_server() and not _game.quest_done and _game.elapsed > 20.0 * _game.depth:
+	# beast and Warden in one blow; the swarm rides its own timer) to
+	# deterministically reach the bell -> descend -> extract loop across
+	# all five depths.
+	if multiplayer.is_server() and not _game.quest_done \
+			and _game.elapsed - _game._site_started > 8.0:
 		match _game.quest_kind:
 			"crates":
 				for c in get_tree().get_nodes_in_group("crates"):
@@ -79,10 +86,16 @@ func _process(delta: float) -> void:
 				if payload != null and not _player.towing:
 					print("[sim] escort assist: warping to the payload")
 					_player.teleport(payload.global_position)
-				elif _player.towing and _game.elapsed > 20.0 * _game.depth + 12.0:
+				elif _player.towing and _game.elapsed - _game._site_started > 16.0:
 					# Towing is slow by design; warp the last leg so the run
 					# fits the frame budget (the payload swims after us).
 					_player.teleport(GameRules.ARENA_SIZE / 2.0)
+			"boss":
+				for e in _game.enemies.get_children():
+					if e is Enemy and e.kind == "warden":
+						print("[sim] boss assist: felling the Warden")
+						e.take_damage(1e9)
+						break
 
 	# If the bot can't fight its way onto the bell (the Maw camps it), warp
 	# it there so the descend/extract flow still gets exercised.
@@ -96,15 +109,16 @@ func _process(delta: float) -> void:
 	else:
 		_bell_wait = 0.0
 
-	# Exercise both bell outcomes: descend twice (deeper spawn table:
-	# lurkers, jellies, the Maw), then extract from depth 3.
+	# Exercise both bell outcomes: descend through the quest depths to the
+	# depth-5 boss lair, then extract (which also exercises the winch
+	# lair-clear recording).
 	if _game.awaiting_choice and multiplayer.is_server():
-		if _game.depth < 3:
+		if _game.depth < 5:
 			print("[sim] bell secured -> descending")
 			_game.choose_descend()
 		else:
-			print("[sim] bell secured -> extracting with %d salvage (bank=%d)" % [
-				_game.salvage_earned, Station.bank])
+			print("[sim] bell secured -> extracting with %d salvage (bank=%d cleared_lair=%d)" % [
+				_game.salvage_earned, Station.bank, Station.cleared_lair])
 			_game.choose_extract()
 
 

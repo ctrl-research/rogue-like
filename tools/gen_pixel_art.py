@@ -193,6 +193,42 @@ NUGGET = {
     },
 }
 
+# 20x20 Trench Warden (boss): armored angler — plated carapace, glowing
+# lure, wide tooth-lined jaw
+WARDEN = {
+    "grid": [
+        "........YY..........",
+        ".........Y..........",
+        ".........P..........",
+        "......PPPPPPP.......",
+        "....PPAAAAAAAPP.....",
+        "...PAAPPAAAPPAAP....",
+        "..PAAAPPAAAPPAAAP...",
+        ".PAAAAAAAAAAAAAAAP..",
+        ".PAARRAAAAAAARRAAP..",
+        "PAAARRAAAAAAARRAAAP.",
+        "PAAAAAAAAAAAAAAAAAPP",
+        "PAWWAWWAWWAWWAWWAWAP",
+        "PADDDDDDDDDDDDDDDDAP",
+        ".PADDDDDDDDDDDDDDAP.",
+        ".PAWWAWWAWWAWWAWAAP.",
+        "..PAAAAAAAAAAAAAAP..",
+        "...PAAAFFAAFFAAAP...",
+        "....PPAFFAAFFAPP....",
+        "......PPPFFPPP......",
+        "........PPP.........",
+    ],
+    "palette": {
+        "P": "#1a2830",
+        "A": "#33505e",
+        "R": "#c94f4f",
+        "W": "#e8e4d0",
+        "D": "#0c161c",
+        "F": "#2a4450",
+        "Y": "#ffd75e",
+    },
+}
+
 # 16x16 wrecked relay (repair-quest objective): battered console, antenna,
 # warning light
 RELAY = {
@@ -476,6 +512,7 @@ SPRITES = {
     "harpoon.png": HARPOON,
     "gem.png": GEM,
     "nugget.png": NUGGET,
+    "warden.png": WARDEN,
     "relay.png": RELAY,
     "payload.png": PAYLOAD,
     "crate.png": CRATE,

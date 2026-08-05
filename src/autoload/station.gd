@@ -22,11 +22,16 @@ const HULL_PER_LEVEL := 15.0
 const HARPOON_PER_LEVEL := 0.08
 const FINS_PER_LEVEL := 0.04
 
+const WINCH_COST_BASE := 200  # refit tier N costs base * N
+
 var bank := 0
 var levels := {}  # id -> int
 var unlocked_divers: Array = [Divers.DEFAULT]
 var diver := Divers.DEFAULT
 var day := 1  # each dive is a day; advances when a run ends (win or loss)
+var cleared_lair := 0  # deepest boss lair this diver has cleared
+var winch := 0  # bought refit tiers; tier N lets dives start at depth 5N+1
+var dive_depth := 1  # chosen start depth for the next dive (host's applies)
 
 var _save_path := SAVE_PATH
 
@@ -89,6 +94,54 @@ func advance_day() -> void:
 	changed.emit()
 
 
+# --- Winch-refit checkpoints (bought progress, not free progress) ----------
+
+
+func record_lair_cleared(d: int) -> void:
+	if d > cleared_lair:
+		cleared_lair = d
+		save_data()
+		changed.emit()
+
+
+func winch_cost(tier: int) -> int:
+	return WINCH_COST_BASE * tier
+
+
+## The next refit is purchasable only once its lair has actually been beaten.
+func can_buy_winch() -> bool:
+	var next := winch + 1
+	return cleared_lair >= next * GameRules.BOSS_DEPTH_INTERVAL \
+			and bank >= winch_cost(next)
+
+
+func buy_winch() -> bool:
+	if not can_buy_winch():
+		return false
+	winch += 1
+	bank -= winch_cost(winch)
+	save_data()
+	changed.emit()
+	return true
+
+
+## Depths a dive may start from: the surface, plus one past each refit lair.
+func start_depths() -> Array[int]:
+	var out: Array[int] = [1]
+	for tier in range(1, winch + 1):
+		out.append(tier * GameRules.BOSS_DEPTH_INTERVAL + 1)
+	return out
+
+
+func select_dive_depth(d: int) -> bool:
+	if not start_depths().has(d):
+		return false
+	dive_depth = d
+	save_data()
+	changed.emit()
+	return true
+
+
 func bank_salvage(amount: int) -> void:
 	if amount <= 0:
 		return
@@ -114,6 +167,9 @@ func load_data() -> void:
 	unlocked_divers = [Divers.DEFAULT]
 	diver = Divers.DEFAULT
 	day = 1
+	cleared_lair = 0
+	winch = 0
+	dive_depth = 1
 	if not FileAccess.file_exists(_save_path):
 		return
 	var file := FileAccess.open(_save_path, FileAccess.READ)
@@ -124,6 +180,11 @@ func load_data() -> void:
 		return
 	bank = maxi(0, int(parsed.get("bank", 0)))
 	day = maxi(1, int(parsed.get("day", 1)))
+	cleared_lair = maxi(0, int(parsed.get("cleared_lair", 0)))
+	winch = maxi(0, int(parsed.get("winch", 0)))
+	dive_depth = int(parsed.get("dive_depth", 1))
+	if not start_depths().has(dive_depth):
+		dive_depth = 1
 	var raw: Variant = parsed.get("levels", {})
 	if raw is Dictionary:
 		for id in UPGRADES:
@@ -149,4 +210,7 @@ func save_data() -> void:
 		"divers": unlocked_divers,
 		"diver": diver,
 		"day": day,
+		"cleared_lair": cleared_lair,
+		"winch": winch,
+		"dive_depth": dive_depth,
 	}))

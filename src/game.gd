@@ -160,6 +160,8 @@ func on_enemy_killed(enemy: Enemy) -> void:
 				_spawn_enemy_deferred.call_deferred("jelly_small", enemy.global_position + offset)
 		"beast":
 			on_beast_killed(enemy.global_position)
+		"warden":
+			on_warden_killed(enemy.global_position)
 		"maw":
 			salvage_earned += 10 * depth
 			for i in 4:
@@ -290,6 +292,22 @@ func on_beast_killed(pos: Vector2) -> void:
 	_complete_quest("The beast is slain — its hoard is yours (+%d)!" % GameRules.quest_reward(depth))
 
 
+func on_warden_killed(pos: Vector2) -> void:
+	salvage_earned += GameRules.boss_reward(depth)
+	for i in 8:
+		_spawn_loot_deferred.call_deferred(
+				"gem", pos + Vector2.from_angle(TAU * i / 8.0) * 24.0)
+	_rpc_record_lair.rpc(depth)
+	_complete_quest("The Warden falls — the trench yields its prize (+%d)!" % GameRules.boss_reward(depth))
+
+
+## Every diver's station remembers the cleared lair — it unlocks buying the
+## next winch-refit checkpoint between dives.
+@rpc("authority", "call_local", "reliable")
+func _rpc_record_lair(lair_depth: int) -> void:
+	Station.record_lair_cleared(lair_depth)
+
+
 ## Server: the site objective is met — drop the bell and say so in one toast
 ## (toasts overwrite each other, so the flourish and the bell share a line).
 func _complete_quest(flourish: String) -> void:
@@ -300,9 +318,12 @@ func _complete_quest(flourish: String) -> void:
 	_rpc_toast.rpc("%s The dive bell has dropped — get to it!" % flourish)
 
 
-## Depth 1 always teaches the classic crate quest; deeper depths draw from a
-## shuffled bag so a run sees every quest before any repeat.
+## Depth 1 always teaches the classic crate quest; every 5th depth is a boss
+## lair; other depths draw from a shuffled bag so a run sees every quest
+## before any repeat.
 func _roll_quest() -> String:
+	if GameRules.is_boss_depth(depth):
+		return "boss"
 	if depth == 1:
 		return "crates"
 	if _quest_bag.is_empty():
@@ -472,6 +493,11 @@ func _start_run(pids: Array[int]) -> void:
 	_max_oxygen = GameRules.OXYGEN_TIME + o2_bonus
 	oxygen = _max_oxygen
 
+	# The host's winch sets the crew's start depth — bought progress.
+	depth = maxi(1, Station.dive_depth)
+	if depth > 1:
+		_rpc_toast.rpc("The winch lowers the crew straight to depth %d." % depth)
+
 	_build_site()
 	var offsets := _spawn_offsets()
 	for i in pids.size():
@@ -526,6 +552,9 @@ func _build_site() -> void:
 			var pod_spot: Vector2 = spots[_rng.randi() % spots.size()]
 			$LootSpawner.spawn({"kind": "payload", "pos": terrain.find_open_near(pod_spot)})
 			_rpc_toast.rpc("Quest: tow the payload to the bell zone — its carrier swims heavy.")
+		"boss":
+			_spawn_warden()
+			_rpc_toast.rpc("BOSS LAIR — the Trench Warden guards the descent. Slay it.")
 
 
 @rpc("authority", "call_local", "reliable")
@@ -595,6 +624,17 @@ func _spawn_beast(lair: Vector2) -> void:
 		return
 	var hp_scale := (1.0 + 0.35 * (Net.player_count() - 1)) * GameRules.depth_hp_scale(depth)
 	$EnemySpawner.spawn({"kind": "beast", "pos": terrain.find_open_near(lair), "hp_scale": hp_scale})
+
+
+## The lair's guardian stalks the middle ground between the crew and the
+## bell zone. Direct spawn for the same cap-safety reason as the beast.
+func _spawn_warden() -> void:
+	if game_over:
+		return
+	var center := GameRules.ARENA_SIZE / 2.0
+	var post := center + Vector2.from_angle(_rng.randf() * TAU) * 260.0
+	var hp_scale := (1.0 + 0.35 * (Net.player_count() - 1)) * GameRules.depth_hp_scale(depth)
+	$EnemySpawner.spawn({"kind": "warden", "pos": terrain.find_open_near(post), "hp_scale": hp_scale})
 
 
 ## The Maw guards the last of the salvage: spawns near a remaining crate.
