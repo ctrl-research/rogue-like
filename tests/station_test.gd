@@ -89,6 +89,10 @@ func _ready() -> void:
 	_check(is_equal_approx(Settings.brightness, 1.4), "brightness survives save/load")
 	# Ambient steps down by a constant amount per descent, floors rather than
 	# reaching black, and brightness lifts the whole thing.
+	# Back to 1.0 first: the round-trip above left it at 1.4, and ambient_for_depth
+	# folds brightness in, so the shape checks below would be measuring the
+	# player's setting rather than the curve.
+	Settings.set_brightness(1.0)
 	var shallow := Settings.ambient_for_depth(1)
 	_check(is_equal_approx(shallow.r, Settings.AMBIENT_SURFACE.r), "depth 1 is the surface shade")
 	var one_step := shallow.r - Settings.ambient_for_depth(2).r
