@@ -7,6 +7,22 @@ class_name Fx
 const MAX_DAMAGE_NUMBERS := 40
 const MAX_POOFS := 24
 
+const SHADOW_TEXTURE := preload("res://assets/sprites/shadow.png")
+
+
+## Anchor a sprite to the deck. Without a contact shadow a flat sprite reads as
+## a sticker sliding over the floor rather than something standing in the
+## trench — and now that rock has visible fronts, that mismatch is obvious.
+## Added as the host's first child so it draws beneath the host's own art, and
+## inherits the host's scale, so bigger fauna cast bigger shadows for free.
+static func attach_shadow(host: Node2D, spread := 1.0, drop := 8.0) -> void:
+	var shadow := Sprite2D.new()
+	shadow.texture = SHADOW_TEXTURE
+	shadow.scale = Vector2.ONE * spread
+	shadow.position = Vector2(0, drop)
+	host.add_child(shadow)
+	host.move_child(shadow, 0)
+
 
 static func damage_number(ctx: Node, pos: Vector2, amount: float, color := Color(1.0, 0.9, 0.5)) -> void:
 	var tree := ctx.get_tree()
