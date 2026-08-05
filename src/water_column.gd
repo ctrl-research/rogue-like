@@ -25,8 +25,8 @@ const FAR_DRIFT := Vector2(-3.0, 1.5)
 # dark already does most of this job, and a heavy vignette on top just fights
 # the lamp.
 const HAZE_NEAR := Color(0.03, 0.07, 0.10)  # colour of the closing dark
-const HAZE_MIN_ALPHA := 0.14  # vignette at the surface
-const HAZE_MAX_ALPHA := 0.34  # vignette deep down
+const HAZE_MIN_ALPHA := 0.06  # vignette at the surface
+const HAZE_MAX_ALPHA := 0.18  # vignette deep down
 const HAZE_DEPTH_SPAN := 8.0  # depths over which the murk thickens
 
 var _near: Sprite2D

@@ -30,7 +30,7 @@ static func attach_shadow(host: Node2D, spread := 1.0, drop := 8.0) -> void:
 ## the quest becomes a search of an unlit room. These are the first of the
 ## "other light sources" from issue #20, and they light the rock around them for
 ## the whole crew exactly like a diver's lamp does.
-static func attach_beacon(host: Node2D, color: Color, energy := 0.85, spread := 0.7) -> void:
+static func attach_beacon(host: Node2D, color: Color, energy := 0.45, spread := 0.7) -> void:
 	var light := PointLight2D.new()
 	light.texture = LIGHT_TEXTURE
 	light.color = color

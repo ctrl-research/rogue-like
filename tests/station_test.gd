@@ -1,6 +1,7 @@
 extends Node
-## Unit test for the Station meta-progression autoload: bank/spend math,
-## level caps, and save/load round-trip against a test-only save path.
+## Unit tests for the persistent autoloads — Station's bank/spend math, level
+## caps and save/load round-trip, plus the Settings brightness calibration —
+## all against test-only save paths.
 ## Prints STATION_TEST_OK / STATION_TEST_FAIL and exits with a matching code.
 
 var _failures: PackedStringArray = []
@@ -74,6 +75,25 @@ func _ready() -> void:
 	Station.day = 1
 	Station.load_data()
 	_check(Station.day == day_before + 1, "day survives save/load")
+
+	# Brightness: clamped to its range, persisted, and folded into the ambient.
+	Settings._save_path = "user://settings_test.json"
+	Settings.brightness = 1.0
+	Settings.set_brightness(99.0)
+	_check(Settings.brightness == Settings.BRIGHTNESS_MAX, "brightness clamps high")
+	Settings.set_brightness(-5.0)
+	_check(Settings.brightness == Settings.BRIGHTNESS_MIN, "brightness clamps low")
+	Settings.set_brightness(1.4)
+	Settings.brightness = 1.0
+	Settings.load_data()
+	_check(is_equal_approx(Settings.brightness, 1.4), "brightness survives save/load")
+	# Deeper water is darker at any setting, and brightness lifts both.
+	var shallow := Settings.ambient_for_depth(1)
+	var deep := Settings.ambient_for_depth(9)
+	_check(deep.r < shallow.r, "ambient darkens with depth")
+	Settings.set_brightness(2.0)
+	_check(Settings.ambient_for_depth(1).r > shallow.r, "brightness lifts the ambient")
+	Settings.set_brightness(1.0)
 
 	if _failures.is_empty():
 		print("STATION_TEST_OK")

@@ -26,6 +26,16 @@ The theme earns its mechanics:
   light source joins in for free. Anything a quest sends you to find carries a
   marker light, or the objective becomes a search of an unlit room; gems don't,
   because collecting one means your own lamp is already on it.
+  The lamp is a **hard-edged banded disc**, not a soft gradient — a radial fade
+  reads as an airbrush laid over 16px art, and the project renders 2D with
+  nearest filtering so a crisp circle stays crisp at any scale. Note that a hard
+  disc emits far more total light than a quadratic falloff of the same energy,
+  so lamp energy came *down* when the edge hardened.
+  Because "near-black" depends entirely on the display, brightness is a
+  **player setting calibrated by eye**: the menu shows patches drawn in the
+  game's own unlit-ambient shade and asks the player to set the slider until the
+  marked one is barely visible. Neighbouring patches are shown too, since
+  judging a single dark patch in isolation is nearly impossible.
 - **Depth** is a natural difficulty ladder and biome axis.
 - **The dive bell** is the extraction decision point: leave with what you have,
   or descend to the next wreck with dwindling oxygen.
