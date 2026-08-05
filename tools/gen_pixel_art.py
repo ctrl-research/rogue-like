@@ -758,6 +758,17 @@ FACE_ROWS = 7  # opaque rows of a wall-front tile; the rest shows the deck.
 # and a taller front would leave one of those looking almost filled in.
 
 
+# One palette for every kind of growth — mats on the rock tops, fronds
+# overhanging the lips, tufts clinging to the side rims. Darker blue-green
+# than a plant green: it has to read as something living in near-black water,
+# close enough to the rock's own value that a dressed block still reads as
+# stone rather than turning into a green tile.
+GROWTH_DEEP = "#0d2a2a"
+GROWTH_MID = "#15423f"
+GROWTH_LITE = "#226059"
+GROWTH_GLOW = "#7ee6ff"  # bioluminescent bud, straight from the game palette
+
+
 def _hash2(a: int, b: int) -> int:
     """Small integer mix. Anything linear in x leaves a visible diagonal comb
     across a tile, so the organic dressing needs a real scramble."""
@@ -806,10 +817,10 @@ def gen_rock_growth_atlas() -> list[list[tuple[int, int, int, int]]]:
     so the upper rows sit on the rock and the lower rows dangle past the edge,
     breaking the tile grid's straight silhouette."""
     clear = (0, 0, 0, 0)
-    dark = hex_rgba("#163a2e")
-    mid = hex_rgba("#2a5f47")
-    lite = hex_rgba("#43966c")
-    glow = hex_rgba("#7ee6ff")
+    dark = hex_rgba(GROWTH_DEEP)
+    mid = hex_rgba(GROWTH_MID)
+    lite = hex_rgba(GROWTH_LITE)
+    glow = hex_rgba(GROWTH_GLOW)
     px = [[clear for _ in range(64)] for _ in range(16)]
     # Each variant is a sparse arrangement of clumps rather than full-width
     # cover: growth wants to read as something that took hold in places, and
@@ -846,6 +857,67 @@ def gen_rock_growth_atlas() -> list[list[tuple[int, int, int, int]]]:
     return px
 
 
+def gen_rock_weed_atlas() -> list[list[tuple[int, int, int, int]]]:
+    """64x16 atlas: four weed colonies bedded on a rock's top face. We look
+    straight down at this plane, so a colony has to read as strands splayed out
+    from a root — rounded blobs just look like rivets hammered into the stone.
+    The overhang atlas handles anything that dangles over an edge."""
+    clear = (0, 0, 0, 0)
+    deep = hex_rgba(GROWTH_DEEP)
+    mid = hex_rgba(GROWTH_MID)
+    lite = hex_rgba(GROWTH_LITE)
+    glow = hex_rgba(GROWTH_GLOW)
+    px = [[clear for _ in range(64)] for _ in range(16)]
+    directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+    for variant in range(4):
+        for mat in range(1 + _hash2(variant + 1, 5) % 2):
+            h = _hash2(variant * 7 + mat * 3 + 1, 91)
+            cx = 3 + h % 10
+            cy = 3 + (h >> 5) % 10
+            for strand in range(4 + (h >> 9) % 5):
+                sh = _hash2(variant * 31 + mat * 11 + strand + 1, 53)
+                dx, dy = directions[sh % 8]
+                length = 2 + (sh >> 3) % 3
+                for step in range(1, length + 1):
+                    x = cx + dx * step
+                    y = cy + dy * step
+                    if 0 <= x < 16 and 0 <= y < 16:
+                        px[y][variant * 16 + x] = mid if step < length else deep
+                if length == 4 and (sh >> 6) % 4 == 0:
+                    x = cx + dx * length
+                    y = cy + dy * length
+                    if 0 <= x < 16 and 0 <= y < 16:
+                        px[y][variant * 16 + x] = glow  # a bud on a long strand
+            px[cy][variant * 16 + cx] = lite  # the root catches the light
+    return px
+
+
+def gen_rock_tuft_atlas() -> list[list[tuple[int, int, int, int]]]:
+    """48x16 atlas: tufts clinging to a rock's vertical rims — column 0 west,
+    1 east, 2 both. Growth shouldn't only live on the lips; the sides that face
+    open water collect it too."""
+    clear = (0, 0, 0, 0)
+    deep = hex_rgba(GROWTH_DEEP)
+    mid = hex_rgba(GROWTH_MID)
+    lite = hex_rgba(GROWTH_LITE)
+    px = [[clear for _ in range(48)] for _ in range(16)]
+
+    def cling(ox: int, west: bool, seed: int) -> None:
+        for y in range(16):
+            h = _hash2(y + 1, seed)
+            if h % 5 >= 2:
+                continue  # leave gaps: a continuous fringe reads as a border
+            for i in range(1 + h % 3):
+                x = i if west else 15 - i
+                px[y][ox + x] = lite if i == 0 else (mid if i < 2 else deep)
+
+    cling(0, True, 17)
+    cling(16, False, 29)
+    cling(32, True, 17)  # column 2 carries both rims
+    cling(32, False, 29)
+    return px
+
+
 def gen_ring(size: int = 64) -> list[list[tuple[int, int, int, int]]]:
     """Thin cyan ring for the sonar pulse visual (scaled up at runtime)."""
     c = (size - 1) / 2.0
@@ -875,7 +947,9 @@ def main() -> None:
     write_png(os.path.join(OUT_DIR, "rock_edge.png"), gen_rock_edge_atlas())
     write_png(os.path.join(OUT_DIR, "rock_face.png"), gen_rock_face_atlas())
     write_png(os.path.join(OUT_DIR, "rock_growth.png"), gen_rock_growth_atlas())
-    print(f"Wrote {len(SPRITES) + 7} sprites to {os.path.normpath(OUT_DIR)}")
+    write_png(os.path.join(OUT_DIR, "rock_weed.png"), gen_rock_weed_atlas())
+    write_png(os.path.join(OUT_DIR, "rock_tuft.png"), gen_rock_tuft_atlas())
+    print(f"Wrote {len(SPRITES) + 9} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":
