@@ -19,6 +19,7 @@ const CORRIDOR_HALF_WIDTH := 1  # cells on each side of the carved line
 const VARIANTS := 3
 const ORE_VARIANT := 3  # atlas column after the plain-rock variants
 const ORE_POCKET_RADIUS := 1.6  # cells — a pocket converts ~5-8 rock cells
+const ORE_PLACEMENT_TRIES := 40  # sampling attempts to find rock per pocket
 
 ## Server broadcasts destruction; ore cells also announce themselves here so
 ## the game can drop salvage nuggets (server only).
@@ -73,8 +74,11 @@ func _seed_ore(map_seed: int, depth: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = map_seed + 1  # variant_rng consumed map_seed's sequence
 	for i in ore_pocket_count(depth):
-		var cx := rng.randi_range(2, GRID_W - 3)
-		var cy := rng.randi_range(2, GRID_H - 3)
+		var origin := _find_rock_cell(rng)
+		if origin.x < 0:
+			continue  # a site carved nearly hollow: nothing left to salt
+		var cx := origin.x
+		var cy := origin.y
 		var r0 := int(ORE_POCKET_RADIUS)
 		for y in range(cy - r0 - 1, cy + r0 + 2):
 			for x in range(cx - r0 - 1, cx + r0 + 2):
@@ -84,6 +88,19 @@ func _seed_ore(map_seed: int, depth: int) -> void:
 				if Vector2(cx, cy).distance_to(Vector2(x, y)) <= ORE_POCKET_RADIUS:
 					set_cell(cell, 0, Vector2i(ORE_VARIANT, 0))
 					initial_ore_cells += 1
+
+
+## A pocket has to START in stone. Most of the map is open water — and the
+## clearings and corridors hollow out more — so centers sampled blind mostly
+## converted nothing, leaving ore far sparser than the pocket count implies
+## (and sometimes absent entirely). Retry until we land in plain rock; the
+## draw stays deterministic because every peer rejects the same candidates.
+func _find_rock_cell(rng: RandomNumberGenerator) -> Vector2i:
+	for attempt in ORE_PLACEMENT_TRIES:
+		var cell := Vector2i(rng.randi_range(2, GRID_W - 3), rng.randi_range(2, GRID_H - 3))
+		if get_cell_source_id(cell) != -1 and not _is_ore(cell):
+			return cell
+	return Vector2i(-1, -1)
 
 
 func _is_ore(cell: Vector2i) -> bool:
