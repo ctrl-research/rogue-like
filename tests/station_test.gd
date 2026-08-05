@@ -73,11 +73,22 @@ func _ready() -> void:
 	_check(Station.UPGRADES.has("lamp"), "lamp array is purchasable")
 	Station.levels["lamp"] = 3
 	_check(int(Station.meta_dict()["lamp"]) == 3, "meta carries the lamp level")
-	_check(is_equal_approx(GameRules.depth_lamp_scale(1), 1.0), "depth 1 lamp is stock")
-	_check(GameRules.depth_lamp_scale(5) < GameRules.depth_lamp_scale(2),
-			"lamp reach shrinks with depth")
-	_check(GameRules.depth_lamp_scale(40) == GameRules.LAMP_DEPTH_FLOOR,
-			"lamp reach floors instead of vanishing")
+	_check(is_equal_approx(GameRules.lamp_radius(0, 0, 1), GameRules.LAMP_BASE_RADIUS),
+			"depth 1 with nothing bought is stock reach")
+	_check(GameRules.lamp_radius(0, 0, 5) < GameRules.lamp_radius(0, 0, 2),
+			"depth takes reach away")
+	_check(GameRules.lamp_radius(3, 0, 5) > GameRules.lamp_radius(0, 0, 5),
+			"the bought array gives reach back")
+	_check(GameRules.lamp_radius(0, 3, 5) > GameRules.lamp_radius(0, 0, 5),
+			"the picked-up lamp gives reach back")
+	# The tug-of-war in one line: reach lost to descending is exactly reach
+	# bought back, in the same unit, so this stays true by construction.
+	var two_depths := 2.0 * GameRules.LAMP_DEPTH_LOSS
+	_check(is_equal_approx(
+			GameRules.lamp_radius(0, 0, 1) - GameRules.lamp_radius(0, 0, 3), two_depths),
+			"each descent costs a fixed number of pixels")
+	_check(GameRules.lamp_radius(0, 0, 99) == GameRules.LAMP_MIN_RADIUS,
+			"reach floors instead of vanishing")
 
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day

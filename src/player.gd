@@ -19,7 +19,9 @@ const TINTS: Array[Color] = [
 const BASE_SPEED := 90.0
 const BASE_MAX_HP := 100.0
 const BASE_PICKUP_RADIUS := 28.0
-const BASE_LAMP_SCALE := 2.2
+## light.png's drawn radius at scale 1, so a reach in pixels can be turned into
+## a texture_scale. Same trick as sonar_ring.gd's SPRITE_RADIUS.
+const LAMP_SPRITE_RADIUS := 63.5
 const LANCE_TINT := Color(0.55, 0.95, 1.0)
 const SOLAR_TINT := Color(1.0, 0.72, 0.3)
 const DRONE_TEXTURE := preload("res://assets/sprites/drone.png")
@@ -257,14 +259,15 @@ func _apply_passives() -> void:
 	_pickup_shape.radius = BASE_PICKUP_RADIUS * pow(1.4, passives.get("magnet", 0))
 
 
-## Lamp reach: stock, widened by the bought Lamp Array and the in-run Arc Lamp,
-## then narrowed by how deep the crew has pushed. Depth is the only one of those
-## that changes mid-run, which is why this is its own function.
+## Lamp reach, in pixels: what's bought plus what's picked up, minus what the
+## depth has swallowed (GameRules.lamp_radius). Depth is the only term that
+## changes mid-run, which is why this is its own function.
 func _update_lamp() -> void:
-	var bought := 1.0 + Station.LAMP_PER_LEVEL * int(meta.get("lamp", 0))
-	var picked := pow(1.25, passives.get("lamp", 0))
-	var swallowed := GameRules.depth_lamp_scale(game.depth if game != null else 1)
-	$Lamp.texture_scale = BASE_LAMP_SCALE * bought * picked * swallowed
+	var reach := GameRules.lamp_radius(
+			int(meta.get("lamp", 0)),
+			passives.get("lamp", 0),
+			game.depth if game != null else 1)
+	$Lamp.texture_scale = reach / LAMP_SPRITE_RADIUS
 
 
 # --- Combat (server) -------------------------------------------------------
