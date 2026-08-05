@@ -49,6 +49,11 @@ const BOSS_REWARD_BASE := 40  # lair guardian bounty, times depth
 # trash saturates the cap and the boss fight becomes a crowd.
 const BOSS_WAVE_HEADROOM := 24
 
+# Lamp reach by depth: 6% narrower per descent, bottoming out at 45% of stock.
+# Depth 5 sits near 0.78, depth 10 near 0.57, and the floor lands around 15.
+const LAMP_DEPTH_FALLOFF := 0.94
+const LAMP_DEPTH_FLOOR := 0.45
+
 
 static func xp_needed(level: int) -> int:
 	return 4 + level * 3
@@ -72,6 +77,15 @@ static func boss_reward(depth: int) -> int:
 
 static func is_boss_depth(depth: int) -> bool:
 	return depth % BOSS_DEPTH_INTERVAL == 0
+
+
+## The trench swallows light as the crew descends, so a lamp lights less and
+## less of it. This is what gives the lamp upgrades something to fight: early on
+## the stock lamp is plenty, and by the deep floors it isn't. Floored so a lamp
+## never becomes useless — losing the light entirely stops being tension and
+## starts being a black screen.
+static func depth_lamp_scale(depth: int) -> float:
+	return maxf(LAMP_DEPTH_FLOOR, pow(LAMP_DEPTH_FALLOFF, depth - 1))
 
 
 static func depth_hp_scale(depth: int) -> float:

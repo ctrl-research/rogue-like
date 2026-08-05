@@ -68,6 +68,17 @@ func _ready() -> void:
 	Station.load_data()
 	_check(Station.winch == 1 and Station.dive_depth == 6, "winch survives save/load")
 
+	# Lamp: the bought upgrade exists, rides the meta handshake into a dive, and
+	# depth eats reach on a curve that bottoms out instead of reaching zero.
+	_check(Station.UPGRADES.has("lamp"), "lamp array is purchasable")
+	Station.levels["lamp"] = 3
+	_check(int(Station.meta_dict()["lamp"]) == 3, "meta carries the lamp level")
+	_check(is_equal_approx(GameRules.depth_lamp_scale(1), 1.0), "depth 1 lamp is stock")
+	_check(GameRules.depth_lamp_scale(5) < GameRules.depth_lamp_scale(2),
+			"lamp reach shrinks with depth")
+	_check(GameRules.depth_lamp_scale(40) == GameRules.LAMP_DEPTH_FLOOR,
+			"lamp reach floors instead of vanishing")
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()

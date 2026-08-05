@@ -15,12 +15,16 @@ const UPGRADES := {
 	"hull": {"title": "HULL PLATING", "desc": "+15 max hull", "base_cost": 25, "max": 5},
 	"harpoon": {"title": "HARPOON MK", "desc": "+8% harpoon damage", "base_cost": 30, "max": 5},
 	"fins": {"title": "DIVE FINS", "desc": "+4% move speed", "base_cost": 30, "max": 5},
+	# The answer to depth eating the lamp (GameRules.depth_lamp_scale). Priced
+	# above the rest because it buys the ability to keep descending at all.
+	"lamp": {"title": "LAMP ARRAY", "desc": "+10% lamp radius", "base_cost": 35, "max": 5},
 }
 
 const O2_PER_LEVEL := 15.0
 const HULL_PER_LEVEL := 15.0
 const HARPOON_PER_LEVEL := 0.08
 const FINS_PER_LEVEL := 0.04
+const LAMP_PER_LEVEL := 0.10
 
 const WINCH_COST_BASE := 200  # refit tier N costs base * N
 
@@ -157,6 +161,7 @@ func meta_dict() -> Dictionary:
 		"hull": level("hull"),
 		"harpoon": level("harpoon"),
 		"fins": level("fins"),
+		"lamp": level("lamp"),
 		"diver": diver,
 	}
 

@@ -54,6 +54,7 @@ var _pending_offers: Array = []  # server-only queue of offers (Array[Array])
 var _pickup_shape: CircleShape2D
 var _drones: Array[Sprite2D] = []
 var _shake := 0.0
+var _lamp_depth := 0  # depth the lamp was last sized for (0 = not sized yet)
 var _mine_accum := 0.0
 
 
@@ -103,6 +104,13 @@ func _physics_process(delta: float) -> void:
 
 	if game == null or game.game_over or dead:
 		return
+
+	# Descending narrows the lamp, and depth moves mid-run — on clients it
+	# arrives through the mirrored HUD state, so every peer watches it rather
+	# than being told.
+	if _lamp_depth != game.depth:
+		_lamp_depth = game.depth
+		_update_lamp()
 
 	if is_local():
 		velocity = Vector2.ZERO
@@ -245,8 +253,18 @@ func _apply_passives() -> void:
 	move_speed = BASE_SPEED * meta_speed * pow(1.10, passives.get("fins", 0))
 	max_hp = BASE_MAX_HP + Station.HULL_PER_LEVEL * int(meta.get("hull", 0)) \
 			+ 20.0 * passives.get("suit", 0)
-	$Lamp.texture_scale = BASE_LAMP_SCALE * pow(1.25, passives.get("lamp", 0))
+	_update_lamp()
 	_pickup_shape.radius = BASE_PICKUP_RADIUS * pow(1.4, passives.get("magnet", 0))
+
+
+## Lamp reach: stock, widened by the bought Lamp Array and the in-run Arc Lamp,
+## then narrowed by how deep the crew has pushed. Depth is the only one of those
+## that changes mid-run, which is why this is its own function.
+func _update_lamp() -> void:
+	var bought := 1.0 + Station.LAMP_PER_LEVEL * int(meta.get("lamp", 0))
+	var picked := pow(1.25, passives.get("lamp", 0))
+	var swallowed := GameRules.depth_lamp_scale(game.depth if game != null else 1)
+	$Lamp.texture_scale = BASE_LAMP_SCALE * bought * picked * swallowed
 
 
 # --- Combat (server) -------------------------------------------------------
