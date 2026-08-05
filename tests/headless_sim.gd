@@ -60,6 +60,11 @@ func _process(delta: float) -> void:
 				if beast != null:
 					print("[sim] hunt assist: putting down the beast")
 					beast.take_damage(1e9)
+			"swarm":
+				# Compress the swarm 4x: headless frames outpace real time,
+				# so a full 70s wait would eat the frame budget before the
+				# run ever reaches the depth-3 extract.
+				_game._site_started -= delta * 3.0
 
 	# If the bot can't fight its way onto the bell (the Maw camps it), warp
 	# it there so the descend/extract flow still gets exercised.
