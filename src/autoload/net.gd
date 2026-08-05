@@ -21,6 +21,7 @@ const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 4
 const GAME_SCENE := "res://scenes/game.tscn"
 const MENU_SCENE := "res://scenes/main_menu.tscn"
+const SUB_SCENE := "res://scenes/sub.tscn"  # the walkable lobby/homebase
 
 var mode := Mode.OFFLINE
 var is_online := false
@@ -45,9 +46,10 @@ func webrtc_available() -> bool:
 	return SignalingClient.webrtc_available()
 
 
+## Solo divers board the sub too — the hatch starts the actual dive.
 func start_solo() -> void:
 	_reset_peer()
-	_change_to_game()
+	get_tree().change_scene_to_file(SUB_SCENE)
 
 
 # --- Online (WebRTC room codes) --------------------------------------------
@@ -183,7 +185,7 @@ func _despawn_game_nodes() -> void:
 @rpc("authority", "call_local", "reliable")
 func _rpc_return_to_lobby() -> void:
 	in_game = false
-	get_tree().change_scene_to_file(MENU_SCENE)
+	get_tree().change_scene_to_file(SUB_SCENE)
 
 
 @rpc("authority", "reliable")

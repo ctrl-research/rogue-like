@@ -5,7 +5,7 @@ extends Node
 ##
 ## Two runs are verified to cover the post-game lobby-retry flow:
 ##   run 1 in-game checks   -> E2E_<ROLE>_OK
-##   host: return_to_lobby  -> both peers land back in the menu, room intact
+##   host: return_to_lobby  -> both peers land back aboard the sub, room intact
 ##   host: start_dive again -> run 2 in-game checks -> E2E_<ROLE>_RETRY_OK
 
 var role := "host"
@@ -54,8 +54,8 @@ func _process(_delta: float) -> void:
 					_return_crew_to_lobby()
 		"lobby":
 			var cs := get_tree().current_scene
-			if cs != null and cs.name == "MainMenu":
-				print("[e2e-%s] back in lobby, session alive=%s room=%s" % [role, Net.is_online, Net.room_code])
+			if cs != null and cs.name == "Sub":
+				print("[e2e-%s] back aboard the sub, session alive=%s room=%s" % [role, Net.is_online, Net.room_code])
 				_phase = "run2"
 				_evaluated = false
 				if role == "host":

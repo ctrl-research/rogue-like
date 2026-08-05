@@ -193,6 +193,118 @@ NUGGET = {
     },
 }
 
+# 16x16 upgrade console (sub interior): terminal with screen + keys
+CONSOLE = {
+    "grid": [
+        "................",
+        "..GGGGGGGGGGGG..",
+        ".GSSSSSSSSSSSSG.",
+        ".GSCCCCCCCCCCSG.",
+        ".GSCWWCCCCWCCSG.",
+        ".GSCCCCWCCCCCSG.",
+        ".GSCCCCCCCCCCSG.",
+        ".GSSSSSSSSSSSSG.",
+        ".GGGGGGGGGGGGGG.",
+        ".GSYSYSYSYSYSSG.",
+        ".GSSSSSSSSSSSSG.",
+        ".GGGGGGGGGGGGGG.",
+        "...GG......GG...",
+        "...GG......GG...",
+        "................",
+        "................",
+    ],
+    "palette": {
+        "G": "#4a5a64",
+        "S": "#2c3a44",
+        "C": "#153a4a",
+        "W": "#7ee6ff",
+        "Y": "#ffd75e",
+    },
+}
+
+# 16x16 diver locker (sub interior): tall cabinet with suit silhouette
+LOCKER = {
+    "grid": [
+        ".GGGGGGGGGGGGGG.",
+        ".GSSSSSSGSSSSSG.",
+        ".GSSSSSSGSSSSSG.",
+        ".GSSDDSSGSSDDSG.",
+        ".GSDDDDSGSDDDDG.",
+        ".GSSDDSSGSSDDSG.",
+        ".GSDDDDSGSDDDDG.",
+        ".GSDDDDSGSDDDDG.",
+        ".GSSYSSSGSSYSSG.",
+        ".GSSSSSSGSSSSSG.",
+        ".GSSSSSSGSSSSSG.",
+        ".GSSSSSSGSSSSSG.",
+        ".GGGGGGGGGGGGGG.",
+        ".GG..........GG.",
+        "................",
+        "................",
+    ],
+    "palette": {
+        "G": "#4a5a64",
+        "S": "#2c3a44",
+        "D": "#d9a33c",
+        "Y": "#7ee6ff",
+    },
+}
+
+# 20x20 dive hatch (sub interior): round wheel-door in the deck
+HATCH = {
+    "grid": [
+        "......PPPPPPP.......",
+        "....PPGGGGGGGPP.....",
+        "...PGGSSSSSSSGGP....",
+        "..PGSSSSSSSSSSSGP...",
+        ".PGSSSGSSSSSGSSSGP..",
+        ".PGSSSSGSSSGSSSSGP..",
+        "PGSSSSSSGSGSSSSSSGP.",
+        "PGSSSSSSSGSSSSSSSGP.",
+        "PGSGGGGGGGGGGGGGSGP.",
+        "PGSSSSSSSGSSSSSSSGP.",
+        "PGSSSSSSGSGSSSSSSGP.",
+        ".PGSSSSGSSSGSSSSGP..",
+        ".PGSSSGSSSSSGSSSGP..",
+        "..PGSSSSSSSSSSSGP...",
+        "...PGGSSSSSSSGGP....",
+        "....PPGGGGGGGPP.....",
+        "......PPPPPPP.......",
+        "....................",
+        "....................",
+        "....................",
+    ],
+    "palette": {
+        "P": "#1c2a33",
+        "G": "#4a5a64",
+        "S": "#2c3a44",
+    },
+}
+
+# 12x12 porthole (sub interior): brass ring, deep water beyond
+PORTHOLE = {
+    "grid": [
+        "...GGGGGG...",
+        "..GYYYYYYG..",
+        ".GYBBBBBBYG.",
+        "GYBBCBBBBBYG",
+        "GYBBBBBBBBYG",
+        "GYBBBBBCBBYG",
+        "GYBBBBBBBBYG",
+        "GYBCBBBBBBYG",
+        "GYBBBBBBBBYG",
+        ".GYBBBBBBYG.",
+        "..GYYYYYYG..",
+        "...GGGGGG...",
+    ],
+    "palette": {
+        "G": "#1c2a33",
+        "Y": "#8a6420",
+        "B": "#0b2030",
+        "C": "#7ee6ff",
+    },
+}
+
 # 20x20 Trench Warden (boss): armored angler — plated carapace, glowing
 # lure, wide tooth-lined jaw
 WARDEN = {
@@ -513,6 +625,10 @@ SPRITES = {
     "gem.png": GEM,
     "nugget.png": NUGGET,
     "warden.png": WARDEN,
+    "console.png": CONSOLE,
+    "locker.png": LOCKER,
+    "hatch.png": HATCH,
+    "porthole.png": PORTHOLE,
     "relay.png": RELAY,
     "payload.png": PAYLOAD,
     "crate.png": CRATE,

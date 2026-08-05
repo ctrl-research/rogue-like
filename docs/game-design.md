@@ -45,8 +45,7 @@ around it.
 - **The sub is home.** Between dives the crew is aboard the sub — a small
   walkable 2D interior with the salvage stash, upgrade console, diver
   locker, and dive hatch. The interior *is* the multiplayer lobby: the crew
-  physically gathers aboard before diving. Current menus stand in only
-  until its milestone ships.
+  physically gathers aboard before diving.
 - **Each dive is a day.** A day counter ticks per dive and frames the
   campaign ("Day 14 — depth record 11"). Days are the hook for future
   events, story beats, and pacing.
@@ -178,8 +177,13 @@ Milestone 0 ships Barbfish + Angler brute only.
   bar, big bounty), and buyable start-depth checkpoints: clearing a lair
   unlocks the next winch refit at the station (tier N costs 200×N, dives
   may then start at depth 5N+1 — bought progress, not free progress).
-- **M9 — planned** — the submarine: walkable interior homebase that doubles
-  as the multiplayer lobby (stash, upgrade console, diver locker, hatch).
+- **M9 — this PR** — the submarine: a walkable interior homebase that IS
+  the multiplayer lobby. Solo and crews alike board the sub; divers walk
+  around with synced positions and name tags, portholes look out on the
+  abyss, and the wall reads the day and crew count. Stations aboard:
+  upgrade CONSOLE (upgrades + winch), diver LOCKER, salvage STASH, and
+  the DIVE HATCH (lead diver starts the dive; invite link, leave/disband
+  live there too). The title screen is now just the connect menu.
 
 ## Backlog (post-M6)
 
