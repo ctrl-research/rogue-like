@@ -174,23 +174,45 @@ func _objective_text() -> String:
 			var left := int(ceilf(_game.quest_progress))
 			return "SURVIVE %d:%02d" % [left / 60, left % 60]
 		"hunt":
-			return "HUNT THE BEAST%s" % _beast_bearing()
+			return "HUNT THE BEAST%s" % _bearing_to(_find_beast(), " — IT'S HERE")
+		"repair":
+			var pct := int(100.0 * _game.quest_progress / GameRules.REPAIR_TIME)
+			return "REPAIR %d%%%s" % [pct, _bearing_to(_find_in_loot("relay"), "")]
+		"escort":
+			if _local != null and _local.towing:
+				return "TOW TO THE BELL ZONE%s" % _bearing_offset(
+						GameRules.ARENA_SIZE / 2.0 - _local.global_position, "")
+			return "GRAB THE PAYLOAD%s" % _bearing_to(_find_in_loot("payload"), " — IT'S HERE")
 		_:
 			return "SALVAGE %d/%d" % [GameRules.CRATE_COUNT - _game.crates_left, GameRules.CRATE_COUNT]
 
 
-## Compass bearing + range to the quarry, from this peer's replicated enemies.
-func _beast_bearing() -> String:
-	if _local == null:
+## Compass bearing + range from the local diver to a replicated node.
+func _bearing_to(target: Node2D, here_text: String) -> String:
+	if _local == null or target == null:
 		return ""
+	return _bearing_offset(target.global_position - _local.global_position, here_text)
+
+
+func _bearing_offset(offset: Vector2, here_text: String) -> String:
+	var dist := int(offset.length() / Terrain.CELL)
+	if dist < 8:
+		return here_text
+	return " %s %dm" % [BEARINGS[wrapi(roundi(offset.angle() / (TAU / 8.0)), 0, 8)], dist]
+
+
+func _find_beast() -> Enemy:
 	for e in _game.enemies.get_children():
 		if e is Enemy and e.kind == "beast":
-			var offset: Vector2 = e.global_position - _local.global_position
-			var dist := int(offset.length() / Terrain.CELL)
-			if dist < 8:
-				return " — IT'S HERE"
-			return " %s %dm" % [BEARINGS[wrapi(roundi(offset.angle() / (TAU / 8.0)), 0, 8)], dist]
-	return ""
+			return e
+	return null
+
+
+func _find_in_loot(group: String) -> Node2D:
+	for n in _game.loot.get_children():
+		if n.is_in_group(group) and not n.is_queued_for_deletion():
+			return n
+	return null
 
 
 func _gear_summary() -> String:

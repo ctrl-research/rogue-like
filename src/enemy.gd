@@ -203,6 +203,10 @@ func _nearest_player() -> Node2D:
 		if player.dead or player.downed:
 			continue
 		var d := global_position.distance_squared_to(player.global_position)
+		if player.towing:
+			# Fauna smell easy prey: the payload carrier reads as much
+			# closer than they are, so the escort draws the horde.
+			d *= 0.15
 		if d < best_d:
 			best_d = d
 			best = player

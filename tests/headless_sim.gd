@@ -65,6 +65,24 @@ func _process(delta: float) -> void:
 				# so a full 70s wait would eat the frame budget before the
 				# run ever reaches the depth-3 extract.
 				_game._site_started -= delta * 3.0
+			"repair":
+				var relay: Node2D = _game._find_in_loot("relay")
+				if relay == null:
+					pass
+				elif _player.global_position.distance_to(relay.global_position) > 70.0:
+					print("[sim] repair assist: warping to the relay")
+					_player.teleport(relay.global_position + Vector2(12, 0))
+				else:
+					_game.quest_progress += delta * 3.0  # compress the hold
+			"escort":
+				var payload: Node2D = _game._find_in_loot("payload")
+				if payload != null and not _player.towing:
+					print("[sim] escort assist: warping to the payload")
+					_player.teleport(payload.global_position)
+				elif _player.towing and _game.elapsed > 20.0 * _game.depth + 12.0:
+					# Towing is slow by design; warp the last leg so the run
+					# fits the frame budget (the payload swims after us).
+					_player.teleport(GameRules.ARENA_SIZE / 2.0)
 
 	# If the bot can't fight its way onto the bell (the Maw camps it), warp
 	# it there so the descend/extract flow still gets exercised.
@@ -97,13 +115,24 @@ func _process(delta: float) -> void:
 func _steer() -> void:
 	var pos := _player.global_position
 	var dir := Vector2.ZERO
-	# Work the current quest's objective: crates while they stand, then the
-	# bell once the quest is done. Swarm/hunt sites have nothing to fetch —
-	# surviving (and the harness assist) carries those.
+	# Work the current quest's objective, then the bell once it's done.
+	# Swarm/hunt sites have nothing to fetch — surviving (and the harness
+	# assist) carries those.
 	var obj_group: String = "bell"
-	if _game.quest_kind == "crates" and _game.crates_left > 0:
-		obj_group = "crates"
+	if not _game.quest_done:
+		match _game.quest_kind:
+			"crates":
+				if _game.crates_left > 0:
+					obj_group = "crates"
+			"repair":
+				obj_group = "relay"
+			"escort":
+				obj_group = "payload"
 	var objective := _nearest_in_group(obj_group, pos, INF)
+	if _game.quest_kind == "escort" and _player.towing:
+		# We ARE the objective now — haul for the bell zone.
+		objective = null
+		dir += (GameRules.ARENA_SIZE / 2.0 - pos).normalized() * 2.0
 	var threat := _nearest_in_group("enemies", pos, 90.0)
 	# Flee is suppressed near the bell — the Maw guards it, and a bot that
 	# always flees never extracts.
