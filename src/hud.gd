@@ -216,8 +216,13 @@ func _objective_text() -> String:
 ## needs no arrow — you can see it.
 func _update_markers() -> void:
 	var targets := [] if _game.game_over or _local == null else _marker_targets()
-	var to_screen := get_viewport().get_canvas_transform()
-	var center := get_viewport_rect().size / 2.0
+	# Both come off the viewport: a CanvasLayer is not a CanvasItem, so it has
+	# no get_viewport_rect() of its own. The canvas transform maps world space
+	# into the same coordinates get_visible_rect() describes, and this layer
+	# sits at identity on top of them — so screen math here needs no scaling.
+	var viewport := get_viewport()
+	var to_screen := viewport.get_canvas_transform()
+	var center := viewport.get_visible_rect().size / 2.0
 	var half := center - Vector2.ONE * MARKER_MARGIN
 	for i in _markers.size():
 		var marker := _markers[i]
