@@ -111,6 +111,25 @@ Milestone 0 ships Barbfish + Angler brute only.
 - Deep palette: near-black blues, bioluminescent accents, warm diver lamps.
 - `CanvasModulate` darkness + per-diver `PointLight2D` lamp for the abyss look.
 
+### 2.5D dimensioning
+
+Characters stay flat 2D sprites; the world around them is drawn to read as
+solid volume you look down into. Gameplay stays exactly top-down 2D — the
+depth is entirely in the rendering, so physics, netcode and the destructible
+terrain are untouched by it.
+
+- **Rock is a mass, not tiles.** The top face is seamless (an outline on every
+  cell turns a rock field into graph paper). Definition comes from dressing
+  layers that rim only the edges actually exposed to open water, plus a darker
+  **wall front** in the cell below each southern lip — the value drop across
+  that edge is what sells the turn.
+- **Growth overhangs the lips**, straddling the edge so the silhouette stops
+  following the tile grid. Bioluminescent buds on the longest fronds.
+- Dressing is derived from each cell and its neighbours, so it needs no
+  replication and cannot desync; peers redress locally after digging.
+- Still to come: drop shadows under sprites, parallax background layers, and
+  depth haze with stronger lamp falloff.
+
 ## Tech
 
 - **Godot 4.6.3**, GL Compatibility renderer (matches web export).
@@ -184,11 +203,15 @@ Milestone 0 ships Barbfish + Angler brute only.
   upgrade CONSOLE (upgrades + winch), diver LOCKER, salvage STASH, and
   the DIVE HATCH (lead diver starts the dive; invite link, leave/disband
   live there too). The title screen is now just the connect menu.
-- **M9.1 — this PR** — off-screen objective arrows: edge-pinned markers
+- **M9.1 — done (PR #24)** — off-screen objective arrows: edge-pinned markers
   with range, pointing at whatever this depth's quest wants (crates, the
   beast, the relay, the payload, the bell zone, the Warden) and at downed
   crewmates ahead of everything. An arrow hides once its target is on
   camera, which retires the HUD's text compass bearings.
+- **M10 — this PR** — 2.5D terrain spike: seamless rock mass with lit rims on
+  exposed sides, a darker wall front under every southern lip, and growth
+  overhanging the edge. First slice of the faux-height pivot; shadows,
+  parallax and haze follow once the look is judged in the browser.
 
 ## Backlog (post-M6)
 
