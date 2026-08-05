@@ -79,6 +79,14 @@ grep -q "E2E_HOST_OK" "$OUT_DIR/host.log"             || { echo "MISSING E2E_HOS
 grep -q "E2E_CLIENT_OK" "$OUT_DIR/client.log"         || { echo "MISSING E2E_CLIENT_OK"; FAIL=1; }
 grep -q "E2E_HOST_RETRY_OK" "$OUT_DIR/host.log"       || { echo "MISSING E2E_HOST_RETRY_OK"; FAIL=1; }
 grep -q "E2E_KIT_OK" "$OUT_DIR/host.log"              || { echo "MISSING E2E_KIT_OK"; FAIL=1; }
+# Downed/revive is a two-player mechanic, so this is the only test that can
+# reach it: the host drives the drill, the client confirms it saw its own diver
+# go down and stand up purely from replicated state.
+grep -q "E2E_HOST_REVIVE_OK" "$OUT_DIR/host.log"      || { echo "MISSING E2E_HOST_REVIVE_OK"; FAIL=1; }
+grep -q "E2E_CLIENT_REVIVE_OK" "$OUT_DIR/client.log"  || { echo "MISSING E2E_CLIENT_REVIVE_OK"; FAIL=1; }
+if grep -h "E2E_REVIVE_FAIL" "$OUT_DIR/host.log" "$OUT_DIR/client.log"; then
+  echo "revive drill reported a failure (see above)"; FAIL=1
+fi
 # Terrain must be byte-identical on both peers (built from the same seed).
 HC="$(grep -oE 'terrain_cells=[0-9]+' "$OUT_DIR/host.log" | head -1 | cut -d= -f2)"
 CC="$(grep -oE 'terrain_cells=[0-9]+' "$OUT_DIR/client.log" | head -1 | cut -d= -f2)"
