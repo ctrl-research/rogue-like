@@ -135,8 +135,16 @@ terrain are untouched by it.
   sprite's feet: a taller ellipse hides its own dense middle behind the sprite.
   They read strongest inside lamp light and vanish in the dark, which is both
   correct and free.
-- Still to come: parallax background layers, and depth haze with stronger lamp
-  falloff.
+- **The water column** carries the parallax. Looking straight down there is
+  nothing *behind* the seabed to parallax against, so the volume the eye can
+  read is the water above it: two layers of drifting marine snow on a canvas
+  layer over the world, scrolling FASTER than it, because things nearer the
+  camera sweep further across the view as it pans. A layer moving slower would
+  read as beneath the floor, which is nowhere.
+- **Depth haze**: ambient light drops and pulls toward the trench's blue-green
+  as the crew descends, and a vignette closes in around the edges of vision.
+  Depth was already the difficulty axis; now it's the visibility axis too.
+  Kept deliberately conservative — the crew still has to see rock to mine it.
 
 ## Tech
 

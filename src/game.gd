@@ -19,6 +19,12 @@ const PAYLOAD_SCENE := preload("res://scenes/payload.tscn")
 const HUD_SYNC_INTERVAL := 0.25
 const WALL_LAYER := 4
 
+# Ambient light by depth. SURFACE_MURK matches the Darkness node's authored
+# colour, so depth 1 looks exactly as it did before.
+const SURFACE_MURK := Color(0.42, 0.5, 0.64)
+const TRENCH_MURK := Color(0.22, 0.30, 0.39)
+const MURK_DEPTH_SPAN := 8.0
+
 ## Shadow spread and drop per loot kind — pickups are small and sit low, the
 ## bell is a machine. Drop has to clear the sprite's own feet or the shadow's
 ## dense middle hides behind it (see Fx.attach_shadow).
@@ -595,6 +601,17 @@ func _rpc_build_site(map_seed: int, site_depth: int, crate_spots: PackedVector2A
 	terrain.build(map_seed, site_depth, crate_spots)
 	terrain_initial_cells = terrain.get_used_cells().size()
 	terrain_initial_ore = terrain.initial_ore_cells
+	# Runs on every peer, so the crew's ambient light dims in step.
+	_apply_depth_murk(site_depth)
+
+
+## The deep gets murkier: ambient light drops and pulls toward the trench's
+## blue-green, and the vignette closes in. Depth was already the difficulty
+## axis; this makes it the visibility axis too.
+func _apply_depth_murk(site_depth: int) -> void:
+	var sink := clampf((site_depth - 1) / MURK_DEPTH_SPAN, 0.0, 1.0)
+	$Darkness.color = SURFACE_MURK.lerp(TRENCH_MURK, sink)
+	$Water.set_depth(site_depth)
 
 
 func _spawn_offsets() -> Array[Vector2]:
