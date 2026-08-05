@@ -21,11 +21,24 @@ const ORE_VARIANT := 3  # atlas column after the plain-rock variants
 const ORE_POCKET_RADIUS := 1.6  # cells — a pocket converts ~5-8 rock cells
 const ORE_PLACEMENT_TRIES := 40  # sampling attempts to find rock per pocket
 
+# Faux-height dressing (see _dress_cell). The rock tiles are seamless; all of
+# the depth cues live on these three overlay layers.
+const EDGE_TEXTURE := preload("res://assets/sprites/rock_edge.png")
+const FACE_TEXTURE := preload("res://assets/sprites/rock_face.png")
+const GROWTH_TEXTURE := preload("res://assets/sprites/rock_growth.png")
+const EDGE_MASKS := 8  # atlas columns: exposure bitmask N|W|E
+const GROWTH_VARIANTS := 4
+const GROWTH_CHANCE := 32  # percent of exposed lips that sprout something
+
 ## Server broadcasts destruction; ore cells also announce themselves here so
 ## the game can drop salvage nuggets (server only).
 signal ore_mined(world_pos: Vector2)
 
 var initial_ore_cells := 0  # determinism fingerprint (see e2e)
+
+var _edges: TileMapLayer  # lit rims on exposed north/west/east sides
+var _faces: TileMapLayer  # the wall front, in the open cell below a rock
+var _growth: TileMapLayer  # weed overhanging a lip, straddling the edge
 
 ## Rock coverage rises with depth: more drilling the deeper you go.
 static func rock_threshold(depth: int) -> float:
@@ -39,6 +52,32 @@ static func ore_pocket_count(depth: int) -> int:
 
 func _ready() -> void:
 	tile_set = _build_tile_set()
+	# Dressing layers turn flat tiles into blocks you look down into. All three
+	# are a pure function of a cell and its neighbours, so they never travel
+	# over the network and cannot desync — each peer redresses locally after
+	# its own build or destruction. Added as children, so they draw over the
+	# rock but still behind everything in Loot/Enemies/Players.
+	_edges = _add_dressing_layer(EDGE_TEXTURE, EDGE_MASKS, Vector2.ZERO)
+	# A whole cell down, so a wall's front lands in the open cell below it.
+	_faces = _add_dressing_layer(FACE_TEXTURE, VARIANTS + 1, Vector2(0, CELL))
+	# Half a cell down, so growth straddles the lip and overhangs the front.
+	_growth = _add_dressing_layer(GROWTH_TEXTURE, GROWTH_VARIANTS, Vector2(0, CELL / 2))
+
+
+func _add_dressing_layer(texture: Texture2D, columns: int, offset: Vector2) -> TileMapLayer:
+	var layer := TileMapLayer.new()
+	layer.position = offset
+	var ts := TileSet.new()
+	ts.tile_size = Vector2i(CELL, CELL)
+	var src := TileSetAtlasSource.new()
+	src.texture = texture
+	src.texture_region_size = Vector2i(CELL, CELL)
+	ts.add_source(src, 0)
+	for column in columns:
+		src.create_tile(Vector2i(column, 0))
+	layer.tile_set = ts  # no physics layer: dressing is purely cosmetic
+	add_child(layer)
+	return layer
 
 
 ## Deterministic build — same inputs on every peer, same rocks everywhere.
@@ -65,6 +104,7 @@ func build(map_seed: int, depth: int, crate_spots: PackedVector2Array) -> void:
 		_carve_corridor(center, spot)
 
 	_seed_ore(map_seed, depth)
+	_dress_all()
 
 
 ## Ore only replaces rock that survived carving, so every pocket is buried —
@@ -105,6 +145,59 @@ func _find_rock_cell(rng: RandomNumberGenerator) -> Vector2i:
 
 func _is_ore(cell: Vector2i) -> bool:
 	return get_cell_atlas_coords(cell).x == ORE_VARIANT
+
+
+# --- Faux-height dressing ----------------------------------------------------
+
+
+func _dress_all() -> void:
+	_edges.clear()
+	_faces.clear()
+	_growth.clear()
+	for cell in get_used_cells():
+		_dress_cell(cell)
+
+
+## Rock is dressed from its own geometry: exposed sides get a lit rim, a cell
+## with open water below shows its front face, and some of those lips sprout
+## growth that hangs over the edge. Keyed off the cell coordinates, so every
+## peer arrives at the same dressing without a word over the network.
+func _dress_cell(cell: Vector2i) -> void:
+	_edges.erase_cell(cell)
+	_faces.erase_cell(cell)
+	_growth.erase_cell(cell)
+	if get_cell_source_id(cell) == -1:
+		return
+
+	var mask := 0
+	if get_cell_source_id(cell + Vector2i.UP) == -1:
+		mask |= 1
+	if get_cell_source_id(cell + Vector2i.LEFT) == -1:
+		mask |= 2
+	if get_cell_source_id(cell + Vector2i.RIGHT) == -1:
+		mask |= 4
+	if mask > 0:
+		_edges.set_cell(cell, 0, Vector2i(mask, 0))
+
+	if get_cell_source_id(cell + Vector2i.DOWN) != -1:
+		return  # buried: no front to show, nothing to grow on
+	var column := ORE_VARIANT if _is_ore(cell) else _dress_hash(cell, 7, 13) % VARIANTS
+	_faces.set_cell(cell, 0, Vector2i(column, 0))
+	if _dress_hash(cell, 31, 17) % 100 < GROWTH_CHANCE:
+		_growth.set_cell(cell, 0, Vector2i(_dress_hash(cell, 11, 5) % GROWTH_VARIANTS, 0))
+
+
+## Stable per-cell scatter. Offset keeps it positive so the modulo can't hand
+## back a negative atlas column.
+func _dress_hash(cell: Vector2i, a: int, b: int) -> int:
+	return absi(cell.x * a + cell.y * b)
+
+
+## After the rock changes, a cell and its vertical neighbours can all look
+## different: digging one cell exposes the front of whatever sat above it.
+func _redress_around(cell: Vector2i) -> void:
+	for offset in [Vector2i.UP, Vector2i.ZERO, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		_dress_cell(cell + offset)
 
 
 ## Server only: destroy rock cells and replicate to everyone.
@@ -154,18 +247,24 @@ func find_open_near(world_pos: Vector2) -> Vector2:
 @rpc("authority", "call_local", "reliable")
 func _rpc_destroy(cells: PackedInt32Array) -> void:
 	var fx_budget := 6  # don't drown big blasts in particles
+	var touched: Array[Vector2i] = []
 	for idx in cells:
 		var cell := Vector2i(idx % GRID_W, idx / GRID_W)
 		if get_cell_source_id(cell) == -1:
 			continue
 		var was_ore := _is_ore(cell)
 		erase_cell(cell)
+		touched.append(cell)
 		if was_ore or fx_budget > 0:  # a struck seam always glints
 			fx_budget -= 1
 			var pos := to_global(map_to_local(cell))
 			var tint := Color(0.85, 0.64, 0.24) if was_ore else Color(0.45, 0.55, 0.62)
 			Fx.poof(self, pos, tint)
 			Sfx.play_at("dig", pos, -12.0)
+	# Redress only after every erase has landed, so a cell's neighbours are
+	# already in their final state when we look at them.
+	for cell in touched:
+		_redress_around(cell)
 
 
 func _carve_circle(world_pos: Vector2, radius: float) -> void:

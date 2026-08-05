@@ -692,12 +692,16 @@ def gen_light(size: int = 128) -> list[list[tuple[int, int, int, int]]]:
 
 
 def gen_rock_atlas() -> list[list[tuple[int, int, int, int]]]:
-    """64x16 atlas: three 16x16 rock tile variants (deterministic speckling)
-    plus a fourth ore variant — same rock, veined with salvage-gold glints."""
+    """64x16 atlas: three 16x16 rock top faces (deterministic speckling) plus
+    a fourth ore variant, veined with salvage-gold glints.
+
+    Deliberately seamless — no per-tile border. An outline on every cell turns
+    a rock mass into visible graph paper; definition comes instead from the
+    dressing layers, which rim only the edges actually exposed to open water
+    (see terrain.gd)."""
     base = hex_rgba("#2a3b46")
     dark = hex_rgba("#1c2a33")
     lite = hex_rgba("#3d5260")
-    edge = hex_rgba("#15202a")
     ore = hex_rgba("#d9a33c")
     ore_lite = hex_rgba("#f2cf6e")
     px = [[base for _ in range(64)] for _ in range(16)]
@@ -706,18 +710,139 @@ def gen_rock_atlas() -> list[list[tuple[int, int, int, int]]]:
             variant = x // 16
             lx = x % 16
             h = (lx * 29 + y * 13 + variant * 41) % 89
-            if lx in (0, 15) or y in (0, 15):
-                px[y][x] = edge
-            elif h < 12:
+            if h < 12:
                 px[y][x] = dark
             elif h < 20:
                 px[y][x] = lite
-            if variant == 3 and lx not in (0, 15) and y not in (0, 15):
+            if variant == 3:
                 v = (lx * 17 + y * 31) % 71
                 if v < 6:
                     px[y][x] = ore
                 elif v == 6:
                     px[y][x] = ore_lite
+    return px
+
+
+def gen_rock_edge_atlas() -> list[list[tuple[int, int, int, int]]]:
+    """128x16 atlas: rim highlights for the three sides that aren't the front,
+    drawn only where a rock cell actually meets open water. Together with the
+    wall front on the south, this is what gives the mass a silhouette now that
+    the rock tiles themselves are seamless.
+
+    The column index is an exposure bitmask (1 = north, 2 = west, 4 = east), so
+    a corner gets both of its rims from one tile — a tile layer holds only a
+    single tile per cell, and three separate layers for this would be waste."""
+    clear = (0, 0, 0, 0)
+    rim = hex_rgba("#4f6878")
+    soft = hex_rgba("#3a4e5c")
+    px = [[clear for _ in range(128)] for _ in range(16)]
+    for mask in range(8):
+        ox = mask * 16
+        if mask & 1:  # north: the lamp-lit top lip
+            for i in range(16):
+                px[0][ox + i] = rim
+                px[1][ox + i] = soft
+        # Side rims stay a single dim pixel: the light reads as coming from
+        # above, and doubling these up outlines the mass like a cartoon stroke.
+        if mask & 2:  # west
+            for y in range(16):
+                px[y][ox] = soft
+        if mask & 4:  # east
+            for y in range(16):
+                px[y][ox + 15] = soft
+    return px
+
+
+FACE_ROWS = 7  # opaque rows of a wall-front tile; the rest shows the deck.
+# Kept well under half a cell on purpose: mining carves single-cell tunnels,
+# and a taller front would leave one of those looking almost filled in.
+
+
+def _hash2(a: int, b: int) -> int:
+    """Small integer mix. Anything linear in x leaves a visible diagonal comb
+    across a tile, so the organic dressing needs a real scramble."""
+    h = (a * 374761393 + b * 668265263) & 0xFFFFFFFF
+    h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+    return (h ^ (h >> 16)) & 0xFFFFFFFF
+
+
+def gen_rock_face_atlas() -> list[list[tuple[int, int, int, int]]]:
+    """64x16 atlas: four wall fronts (3 rock + 1 ore) matching rock.png's
+    columns. Only the top FACE_ROWS are opaque — the tile is drawn in the open
+    cell below a rock, so the band reads as the wall's front and the floor
+    still shows beneath it. Darker than the top face: this side faces away
+    from the diver's lamp."""
+    clear = (0, 0, 0, 0)
+    # The front faces away from the light, so every tone here sits BELOW the
+    # top face's #2a3b46 — that value drop is what sells the turn of the edge.
+    lip = hex_rgba("#3d5260")  # just enough to catch the lip
+    base = hex_rgba("#1a2731")
+    dark = hex_rgba("#121c24")
+    deep = hex_rgba("#080e13")
+    ore = hex_rgba("#a8762a")
+    px = [[clear for _ in range(64)] for _ in range(16)]
+    for y in range(FACE_ROWS):
+        for x in range(64):
+            variant = x // 16
+            lx = x % 16
+            if y == 0:
+                px[y][x] = lip
+            elif y >= FACE_ROWS - 2:
+                px[y][x] = deep  # contact shadow where wall meets deck
+            else:
+                # Vertical striations, darkening toward the base.
+                streak = (lx * 23 + variant * 37) % 5
+                px[y][x] = dark if streak < 2 or y > FACE_ROWS - 5 else base
+            # Ore seams glint on the front too, not just the top face.
+            if variant == 3 and 0 < y < FACE_ROWS - 2:
+                if (lx * 17 + y * 29) % 41 < 5:
+                    px[y][x] = ore
+    return px
+
+
+def gen_rock_growth_atlas() -> list[list[tuple[int, int, int, int]]]:
+    """64x16 atlas: four overhang variants — abyssal growth cresting a wall's
+    lip and trailing over its front. Drawn on a layer offset half a cell down,
+    so the upper rows sit on the rock and the lower rows dangle past the edge,
+    breaking the tile grid's straight silhouette."""
+    clear = (0, 0, 0, 0)
+    dark = hex_rgba("#163a2e")
+    mid = hex_rgba("#2a5f47")
+    lite = hex_rgba("#43966c")
+    glow = hex_rgba("#7ee6ff")
+    px = [[clear for _ in range(64)] for _ in range(16)]
+    # Each variant is a sparse arrangement of clumps rather than full-width
+    # cover: growth wants to read as something that took hold in places, and
+    # a continuous fringe would just be a green stripe hiding the wall.
+    clumps = [
+        [(1, 6)],  # one clump, left of centre
+        [(5, 8)],  # a broad clump mid-tile
+        [(0, 4), (10, 5)],  # two smaller colonies
+        [(11, 4)],  # a lone wisp near the right edge
+    ]
+    for variant, spans in enumerate(clumps):
+        for start, width in spans:
+            middle = (width - 1) / 2.0
+            for i in range(width):
+                lx = start + i
+                if lx > 15:
+                    continue
+                x = variant * 16 + lx
+                # Fat in the middle, tapering at the edges, so a clump has a
+                # rounded silhouette instead of a squared-off block.
+                taper = 1.0 - abs(i - middle) / (middle + 1.0)
+                h = _hash2(lx + 1, variant + 1)
+                crest = max(1, round((2 + h % 3) * (0.5 + 0.5 * taper)))
+                for y in range(crest):
+                    px[y][x] = lite if y >= crest - 1 else mid
+                frond = round((3 + (h >> 3) % 7) * taper)
+                if frond > 2:
+                    tip = min(16, crest + frond)
+                    for y in range(crest, tip):
+                        # Fronds darken as they fall away from the lit lip.
+                        px[y][x] = dark if y > crest + 2 else mid
+                    if frond >= 6:
+                        px[tip - 1][x] = glow  # bioluminescent bud
     return px
 
 
@@ -747,7 +872,10 @@ def main() -> None:
     write_png(os.path.join(OUT_DIR, "light.png"), gen_light())
     write_png(os.path.join(OUT_DIR, "ring.png"), gen_ring())
     write_png(os.path.join(OUT_DIR, "rock.png"), gen_rock_atlas())
-    print(f"Wrote {len(SPRITES) + 4} sprites to {os.path.normpath(OUT_DIR)}")
+    write_png(os.path.join(OUT_DIR, "rock_edge.png"), gen_rock_edge_atlas())
+    write_png(os.path.join(OUT_DIR, "rock_face.png"), gen_rock_face_atlas())
+    write_png(os.path.join(OUT_DIR, "rock_growth.png"), gen_rock_growth_atlas())
+    print(f"Wrote {len(SPRITES) + 7} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":
