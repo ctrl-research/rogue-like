@@ -16,14 +16,16 @@ extends Node2D
 
 const DIVER_SCENE := preload("res://scenes/sub_diver.tscn")
 
-const INTERIOR := Rect2(48, 72, 544, 224)  # walkable bounds
+const HULL_TEXTURE := preload("res://assets/sprites/sub_hull.png")
+const HULL_ORIGIN := Vector2(172, 112)  # centres the 296x136 hull on the view
+## Walkable deck: the hull's midsection, inside its plating. Roughly a third of
+## the old box (issue #32) — small enough that the whole boat fits on screen at
+## 2x zoom, so the crew reads at a size where you can tell who is who.
+const INTERIOR := Rect2(208, 124, 204, 112)
 const STATION_RANGE := 30.0
 const WALL_LAYER := 4  # same hull layer the game scene uses
 
-# Interior palette
-const HULL := Color("10181e")
-const ROOM := Color("182831")
-const TRIM := Color("1c2a33")
+const OPEN_WATER := Color("070f16")  # the sea the boat is sitting in
 
 var _roster := {}  # pid -> diver_id (host-authoritative, mirrored to all)
 var _entered_online := false  # session died while aboard -> back to the menu
@@ -128,7 +130,8 @@ func _on_roster(roster: Dictionary) -> void:
 		d.name = node_name
 		d.peer_id = pid
 		d.diver_id = _roster[pid]
-		d.position = Vector2(200 + 60 * seat, 200)
+		# Spaced along the deck's lower half, clear of the stations up top.
+		d.position = INTERIOR.position + Vector2(34 + 40 * seat, 76)
 		Fx.attach_shadow(d)
 		divers.add_child(d)
 	_refresh_wall_text()
@@ -181,7 +184,11 @@ func _update_prompt() -> void:
 		return
 	_prompt.visible = true
 	_prompt.text = "[E] %s" % station.label
-	_prompt.position = station.pos + Vector2(-40, -34)
+	# The prompt lives on a CanvasLayer (screen space) but the station is a world
+	# position, so it has to go through the canvas transform. That used to be a
+	# no-op at zoom 1 and would have silently drifted once the camera zoomed in.
+	var to_screen := get_viewport().get_canvas_transform()
+	_prompt.position = to_screen * station.pos + Vector2(-40, -34)
 
 
 func _open_panel(kind: String) -> void:
@@ -298,28 +305,35 @@ func _build_share_url(room: String) -> String:
 
 
 func _build_interior() -> void:
-	_rect(Rect2(0, 0, 640, 360), HULL)
-	_rect(INTERIOR.grow(8), TRIM)
-	_rect(INTERIOR, ROOM)
-	# Deck plating seams.
-	for x in range(int(INTERIOR.position.x) + 32, int(INTERIOR.end.x), 64):
-		_rect(Rect2(x, INTERIOR.position.y, 1, INTERIOR.size.y), Color(TRIM, 0.6))
-	# Portholes along the top wall: the abyss looks back.
-	var porthole := preload("res://assets/sprites/porthole.png")
-	for x in range(140, 520, 90):
-		var p := Sprite2D.new()
-		p.texture = porthole
-		p.position = Vector2(x, INTERIOR.position.y - 2)
-		add_child(p)
+	# Open water around the boat, then the hull itself as one sprite — a
+	# pointed bow, a blunt finned stern and sealed end compartments, which a
+	# rectangle of ColorRects could never read as.
+	_rect(Rect2(0, 0, 640, 360), OPEN_WATER)
+	var shell := Sprite2D.new()
+	shell.texture = HULL_TEXTURE
+	shell.centered = false
+	shell.position = HULL_ORIGIN
+	add_child(shell)
 
+	# Portholes down both sides now the crew space is narrow enough to see
+	# across: the abyss looks back from either beam.
+	var porthole := preload("res://assets/sprites/porthole.png")
+	for x in range(int(INTERIOR.position.x) + 24, int(INTERIOR.end.x) - 12, 54):
+		for y in [INTERIOR.position.y - 1, INTERIOR.end.y + 1]:
+			var p := Sprite2D.new()
+			p.texture = porthole
+			p.position = Vector2(x, y)
+			add_child(p)
+
+	var deck_top := INTERIOR.position.y + 22
 	_add_station("console", "CONSOLE", preload("res://assets/sprites/console.png"),
-			Vector2(150, INTERIOR.position.y + 26))
+			Vector2(INTERIOR.position.x + 40, deck_top))
 	_add_station("locker", "LOCKER", preload("res://assets/sprites/locker.png"),
-			Vector2(360, INTERIOR.position.y + 26))
+			Vector2(INTERIOR.position.x + 112, deck_top))
 	_add_station("stash", "STASH", preload("res://assets/sprites/crate.png"),
-			Vector2(470, INTERIOR.position.y + 28))
+			Vector2(INTERIOR.position.x + 168, deck_top + 2))
 	_add_station("hatch", "DIVE HATCH", preload("res://assets/sprites/hatch.png"),
-			Vector2(INTERIOR.end.x - 44, INTERIOR.position.y + INTERIOR.size.y / 2.0))
+			Vector2(INTERIOR.end.x - 26, INTERIOR.position.y + INTERIOR.size.y / 2.0))
 
 	# Hull collision so the crew stays aboard.
 	var specs := [

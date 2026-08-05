@@ -972,6 +972,71 @@ def gen_shadow(width: int = 16, height: int = 5) -> list[list[tuple[int, int, in
     return px
 
 
+SUB_HULL_W = 296
+SUB_HULL_H = 136
+SUB_BOW = 52  # px of bow taper (right); long and pointed
+SUB_STERN = 30  # px of stern taper (left); short and blunt
+SUB_PLATE = 10  # thickness of the pressure hull around the deck
+
+
+def _sub_half_height(x: int) -> float:
+    """Hull half-height at a given station along the length. Asymmetric on
+    purpose: a symmetric taper reads as a pill, not a boat."""
+    top = SUB_HULL_H / 2.0 - 1.0
+    if x < SUB_STERN:  # blunt, barely-tapered stern
+        t = (x + 1) / float(SUB_STERN)
+        return (0.55 + 0.45 * t ** 0.5) * top
+    if x > SUB_HULL_W - 1 - SUB_BOW:  # long, pointed bow
+        t = (SUB_HULL_W - 1 - x) / float(SUB_BOW)
+        return (0.08 + 0.92 * t ** 0.8) * top
+    return top
+
+
+def gen_sub_hull() -> list[list[tuple[int, int, int, int]]]:
+    """Top-down cutaway of the sub: pointed bow, blunt finned stern, sealed
+    compartments at each end and a ribbed walkable deck between them. The
+    interior used to be a plain rectangle of ColorRects, which read as a room
+    rather than a boat (issue #32)."""
+    clear = (0, 0, 0, 0)
+    rim = hex_rgba("#6a8090")  # lit outer edge of the pressure hull
+    hull = hex_rgba("#101a22")  # plating, well below the deck's value
+    rib = hex_rgba("#243544")
+    deck = hex_rgba("#1e3140")
+    seam = hex_rgba("#15242f")
+    px = [[clear for _ in range(SUB_HULL_W)] for _ in range(SUB_HULL_H)]
+    cy = (SUB_HULL_H - 1) / 2.0
+    # The deck only spans the midsection; bow and stern stay sealed hull, which
+    # is what makes it read as a vessel with a crew space inside it.
+    deck_from = SUB_STERN + 6
+    deck_to = SUB_HULL_W - 1 - SUB_BOW - 6
+    for x in range(SUB_HULL_W):
+        half = _sub_half_height(x)
+        for y in range(SUB_HULL_H):
+            d = abs(y - cy)
+            if d > half:
+                continue
+            if d > half - 2.0:
+                px[y][x] = rim
+            elif d > half - SUB_PLATE or not (deck_from <= x <= deck_to):
+                px[y][x] = rib if x % 20 < 2 else hull
+            else:
+                px[y][x] = seam if x % 24 == 0 else deck
+        # Bulkheads closing the crew space off from the end compartments.
+        if x in (deck_from - 1, deck_to + 1):
+            for y in range(SUB_HULL_H):
+                if abs(y - cy) <= half - 2.0:
+                    px[y][x] = rib
+
+    # Stern fin: stands proud of the hull line, so the silhouette has a tail.
+    fin_half = (SUB_HULL_H / 2.0 - 1.0) * 0.92
+    for x in range(0, 9):
+        for y in range(SUB_HULL_H):
+            d = abs(y - cy)
+            if d <= fin_half and d > _sub_half_height(x):
+                px[y][x] = rim if d > fin_half - 2.0 else hull
+    return px
+
+
 def gen_motes(
     size: int = 64, count: int = 40, brightness: int = 70, seed: int = 5
 ) -> list[list[tuple[int, int, int, int]]]:
@@ -1022,6 +1087,7 @@ def main() -> None:
     write_png(os.path.join(OUT_DIR, "floor.png"), gen_floor())
     write_png(os.path.join(OUT_DIR, "light.png"), gen_light())
     write_png(os.path.join(OUT_DIR, "shadow.png"), gen_shadow())
+    write_png(os.path.join(OUT_DIR, "sub_hull.png"), gen_sub_hull())
     # Sparse on purpose. Tiled across a 640x360 view these land at roughly
     # 250 specks across a 640x360 view; the first attempt was ~1100 and read as a blizzard.
     write_png(os.path.join(OUT_DIR, "motes_near.png"), gen_motes(128, 6, 58, 5))
@@ -1032,7 +1098,7 @@ def main() -> None:
     write_png(os.path.join(OUT_DIR, "rock_face.png"), gen_rock_face_atlas())
     write_png(os.path.join(OUT_DIR, "rock_growth.png"), gen_rock_growth_atlas())
     write_png(os.path.join(OUT_DIR, "rock_tuft.png"), gen_rock_tuft_atlas())
-    print(f"Wrote {len(SPRITES) + 11} sprites to {os.path.normpath(OUT_DIR)}")
+    print(f"Wrote {len(SPRITES) + 12} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":
