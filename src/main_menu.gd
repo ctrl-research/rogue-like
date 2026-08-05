@@ -4,11 +4,20 @@ extends Control
 ## this screen only gets the crew connected. On web, opening a shared
 ## `#room=CODE` URL auto-joins that room.
 
+## Calibration strip: patches at multiples of the trench's unlit ambient. The
+## middle one is the target — set brightness so it is only just visible and
+## unlit rock will sit right at the edge of perception too. The neighbours give
+## the eye something to compare against, which is the whole trick: judging one
+## dark patch in isolation is nearly impossible.
+const CALIBRATION_STEPS: Array[float] = [0.45, 1.0, 1.7, 2.6]
+const CALIBRATION_TARGET := 1  # index of the patch the instruction refers to
+
 var _menu_box: VBoxContainer
 var _status: Label
 var _summary: Label
 var _address: LineEdit
 var _code_edit: LineEdit
+var _patches: Array[ColorRect] = []
 
 
 func _ready() -> void:
@@ -16,8 +25,10 @@ func _ready() -> void:
 	Net.entered_lobby.connect(_on_entered_lobby)
 	Net.session_ended.connect(func() -> void: _menu_box.visible = true)
 	Station.changed.connect(_refresh_summary)
+	Settings.changed.connect(_refresh_patches)
 	_build()
 	_refresh_summary()
+	_refresh_patches()
 	if Net.is_online:
 		# Returning here with a live session (edge path): the sub is home.
 		get_tree().change_scene_to_file(Net.SUB_SCENE)
@@ -122,6 +133,9 @@ func _build() -> void:
 		join_lan.pressed.connect(func() -> void: Net.join_lan(_address.text))
 		lan_row.add_child(join_lan)
 
+	box.add_child(HSeparator.new())
+	_build_brightness(box)
+
 	_status = Label.new()
 	_status.add_theme_font_size_override("font_size", 9)
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -129,6 +143,62 @@ func _build() -> void:
 	_status.custom_minimum_size = Vector2(280, 24)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_status)
+
+
+## Brightness, calibrated by eye rather than by number. The trench is meant to
+## be near-black outside a lamp, and how near-black that lands depends entirely
+## on the display — so the player is shown the actual ambient shade the game
+## will use and asked to set it until they can only just make it out.
+func _build_brightness(box: VBoxContainer) -> void:
+	var header := Label.new()
+	header.text = "DISPLAY"
+	header.add_theme_font_size_override("font_size", 8)
+	header.modulate = Color(0.62, 0.9, 1.0)
+	box.add_child(header)
+
+	var hint := Label.new()
+	hint.text = "Drag until the middle patch is only just visible."
+	hint.add_theme_font_size_override("font_size", 8)
+	hint.modulate = Color(0.7, 0.8, 0.86)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(hint)
+
+	var strip := HBoxContainer.new()
+	strip.alignment = BoxContainer.ALIGNMENT_CENTER
+	strip.add_theme_constant_override("separation", 4)
+	box.add_child(strip)
+	_patches = []
+	for i in CALIBRATION_STEPS.size():
+		# The target patch is boxed so it's identifiable without needing to be
+		# brighter than its neighbours — brightening it would defeat the point.
+		var frame := PanelContainer.new()
+		# self_modulate, not modulate: modulate would propagate to the patch
+		# inside and hide the three unframed ones entirely.
+		frame.self_modulate.a = 0.5 if i == CALIBRATION_TARGET else 0.0
+		strip.add_child(frame)
+		var patch := ColorRect.new()
+		patch.custom_minimum_size = Vector2(42, 24)
+		frame.add_child(patch)
+		_patches.append(patch)
+
+	var slider := HSlider.new()
+	slider.min_value = Settings.BRIGHTNESS_MIN
+	slider.max_value = Settings.BRIGHTNESS_MAX
+	slider.step = 0.05
+	slider.value = Settings.brightness
+	slider.custom_minimum_size = Vector2(280, 0)
+	slider.value_changed.connect(func(v: float) -> void: Settings.set_brightness(v))
+	box.add_child(slider)
+
+
+func _refresh_patches() -> void:
+	var base := Settings.AMBIENT_SURFACE
+	for i in _patches.size():
+		# Built channel by channel: `Color * float` scales alpha too, which
+		# would leave the darker patches translucent instead of dark.
+		var step: float = CALIBRATION_STEPS[i]
+		_patches[i].color = Settings.scaled(
+				Color(base.r * step, base.g * step, base.b * step))
 
 
 func _refresh_summary() -> void:

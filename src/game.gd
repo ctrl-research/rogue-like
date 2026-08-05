@@ -19,15 +19,13 @@ const PAYLOAD_SCENE := preload("res://scenes/payload.tscn")
 const HUD_SYNC_INTERVAL := 0.25
 const WALL_LAYER := 4
 
-# Ambient light by depth. Crushed almost to black: outside a light source the
-# trench should hide what's in it, so a sprite's own colour times this ambient
-# lands close enough to nothing to read as unseen. What makes this work for
-# co-op without any extra code is that 2D lighting composites per pixel — every
-# diver's lamp is present on every peer, so the crew's vision is additive, and
-# any light source added later joins in for free (issue #20).
-const SURFACE_MURK := Color(0.10, 0.13, 0.18)
-const TRENCH_MURK := Color(0.05, 0.07, 0.10)
-const MURK_DEPTH_SPAN := 8.0
+# Ambient light lives in Settings, because the player's brightness calibration
+# has to be folded into it and the menu needs the same shade to calibrate
+# against. Unlit terrain sits at that ambient: barely a silhouette, so what you
+# have not lit you cannot really see. What makes this work for co-op without any
+# extra code is that 2D lighting composites per pixel — every diver's lamp is
+# present on every peer, so the crew's vision is additive, and any light source
+# added later joins in for free (issue #20).
 
 ## Shadow spread and drop per loot kind — pickups are small and sit low, the
 ## bell is a machine. Drop has to clear the sprite's own feet or the shadow's
@@ -95,6 +93,8 @@ var _rng := RandomNumberGenerator.new()
 var terrain_initial_cells := 0  # determinism fingerprints (see e2e)
 var terrain_initial_ore := 0
 
+var _murk_depth := 1  # last depth the ambient was set for, to re-apply on retune
+
 
 func _ready() -> void:
 	$PlayerSpawner.spawn_function = _spawn_player
@@ -102,6 +102,9 @@ func _ready() -> void:
 	$LootSpawner.spawn_function = _spawn_loot
 	$ProjectileSpawner.spawn_function = _spawn_projectile
 	_build_walls()
+	# Re-tuning brightness mid-dive takes effect immediately rather than at the
+	# next site, which matters because a dive is where you notice it's wrong.
+	Settings.changed.connect(func() -> void: _apply_depth_murk(_murk_depth))
 	if multiplayer.is_server():
 		terrain.ore_mined.connect(_on_ore_mined)
 		multiplayer.peer_disconnected.connect(_on_peer_left)
@@ -458,7 +461,7 @@ func _spawn_enemy(data: Variant) -> Node:
 		# The lair guardian carries its own lure-light. A boss you cannot see is
 		# just a hazard; the beast stays unlit on purpose, because tracking it by
 		# sonar IS the hunt.
-		Fx.attach_beacon(node, Color(1.0, 0.72, 0.42), 0.9, 0.85)
+		Fx.attach_beacon(node, Color(1.0, 0.72, 0.42), 0.5, 0.85)
 	return node
 
 
@@ -490,7 +493,7 @@ func _spawn_loot(data: Variant) -> Node:
 		# Explicit bool: data is a Variant, so `:=` cannot infer a comparison on it.
 		var bright: bool = data.kind == "bell"
 		Fx.attach_beacon(node, LOOT_BEACON[data.kind],
-				1.15 if bright else 0.8, 1.1 if bright else 0.6)
+				0.62 if bright else 0.42, 1.1 if bright else 0.6)
 	return node
 
 
@@ -636,8 +639,8 @@ func _rpc_build_site(map_seed: int, site_depth: int, crate_spots: PackedVector2A
 ## blue-green, and the vignette closes in. Depth was already the difficulty
 ## axis; this makes it the visibility axis too.
 func _apply_depth_murk(site_depth: int) -> void:
-	var sink := clampf((site_depth - 1) / MURK_DEPTH_SPAN, 0.0, 1.0)
-	$Darkness.color = SURFACE_MURK.lerp(TRENCH_MURK, sink)
+	_murk_depth = site_depth
+	$Darkness.color = Settings.ambient_for_depth(site_depth)
 	$Water.set_depth(site_depth)
 
 

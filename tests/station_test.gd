@@ -1,6 +1,7 @@
 extends Node
-## Unit test for the Station meta-progression autoload: bank/spend math,
-## level caps, and save/load round-trip against a test-only save path.
+## Unit tests for the persistent autoloads — Station's bank/spend math, level
+## caps and save/load round-trip, plus the Settings brightness calibration —
+## all against test-only save paths.
 ## Prints STATION_TEST_OK / STATION_TEST_FAIL and exits with a matching code.
 
 var _failures: PackedStringArray = []
@@ -74,6 +75,30 @@ func _ready() -> void:
 	Station.day = 1
 	Station.load_data()
 	_check(Station.day == day_before + 1, "day survives save/load")
+
+	# Brightness: clamped to its range, persisted, and folded into the ambient.
+	Settings._save_path = "user://settings_test.json"
+	Settings.brightness = 1.0
+	Settings.set_brightness(99.0)
+	_check(Settings.brightness == Settings.BRIGHTNESS_MAX, "brightness clamps high")
+	Settings.set_brightness(-5.0)
+	_check(Settings.brightness == Settings.BRIGHTNESS_MIN, "brightness clamps low")
+	Settings.set_brightness(1.4)
+	Settings.brightness = 1.0
+	Settings.load_data()
+	_check(is_equal_approx(Settings.brightness, 1.4), "brightness survives save/load")
+	# Ambient steps down by a constant amount per descent, floors rather than
+	# reaching black, and brightness lifts the whole thing.
+	var shallow := Settings.ambient_for_depth(1)
+	_check(is_equal_approx(shallow.r, Settings.AMBIENT_SURFACE.r), "depth 1 is the surface shade")
+	var one_step := shallow.r - Settings.ambient_for_depth(2).r
+	var two_steps := shallow.r - Settings.ambient_for_depth(3).r
+	_check(is_equal_approx(two_steps, one_step * 2.0), "each descent costs the same")
+	_check(is_equal_approx(Settings.ambient_for_depth(99).r, Settings.AMBIENT_FLOOR.r),
+			"ambient floors instead of reaching black")
+	Settings.set_brightness(2.0)
+	_check(Settings.ambient_for_depth(1).r > shallow.r, "brightness lifts the ambient")
+	Settings.set_brightness(1.0)
 
 	if _failures.is_empty():
 		print("STATION_TEST_OK")

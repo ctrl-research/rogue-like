@@ -728,16 +728,29 @@ def gen_floor() -> list[list[tuple[int, int, int, int]]]:
 
 
 def gen_light(size: int = 128) -> list[list[tuple[int, int, int, int]]]:
-    """Radial white gradient for PointLight2D lamp texture."""
+    """Lamp disc for PointLight2D: a hard edge and quantised bands instead of a
+    smooth radial fade. A soft gradient reads as an airbrush laid over 16px
+    pixel art — the crisp cut belongs to the same grid as everything else, and
+    the project renders 2D with nearest filtering, so the edge stays sharp
+    however far PointLight2D scales it up.
+
+    Three bands rather than one flat disc: the light still falls off toward the
+    rim, it just does it in steps you can count."""
     c = (size - 1) / 2.0
     px = []
     for y in range(size):
         row = []
         for x in range(size):
             d = ((x - c) ** 2 + (y - c) ** 2) ** 0.5 / c
-            a = max(0.0, 1.0 - d)
-            a = a * a  # quadratic falloff, softer edge
-            row.append((255, 245, 220, int(a * 255)))
+            if d > 1.0:
+                alpha = 0.0  # hard cut: outside the lamp is outside the lamp
+            elif d > 0.87:
+                alpha = 0.52
+            elif d > 0.63:
+                alpha = 0.80
+            else:
+                alpha = 1.0
+            row.append((255, 245, 220, int(alpha * 255)))
         px.append(row)
     return px
 
