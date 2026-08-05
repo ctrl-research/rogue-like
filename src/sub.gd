@@ -129,6 +129,7 @@ func _on_roster(roster: Dictionary) -> void:
 		d.peer_id = pid
 		d.diver_id = _roster[pid]
 		d.position = Vector2(200 + 60 * seat, 200)
+		Fx.attach_shadow(d)
 		divers.add_child(d)
 	_refresh_wall_text()
 

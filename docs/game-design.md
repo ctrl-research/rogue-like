@@ -127,8 +127,16 @@ terrain are untouched by it.
   following the tile grid. Bioluminescent buds on the longest fronds.
 - Dressing is derived from each cell and its neighbours, so it needs no
   replication and cannot desync; peers redress locally after digging.
-- Still to come: drop shadows under sprites, parallax background layers, and
-  depth haze with stronger lamp falloff.
+- The seabed is tileable value noise, not a modulo pattern — a linear function
+  under a modulo lays down a regular diagonal lattice, and the tile is large
+  (128px) because the arena repeats one tile across 1600px.
+- **Contact shadows** sit under divers, fauna and loot, attached at the spawn
+  sites so every kind gets one. They're squashed flat and dropped clear of the
+  sprite's feet: a taller ellipse hides its own dense middle behind the sprite.
+  They read strongest inside lamp light and vanish in the dark, which is both
+  correct and free.
+- Still to come: parallax background layers, and depth haze with stronger lamp
+  falloff.
 
 ## Tech
 

@@ -19,6 +19,18 @@ const PAYLOAD_SCENE := preload("res://scenes/payload.tscn")
 const HUD_SYNC_INTERVAL := 0.25
 const WALL_LAYER := 4
 
+## Shadow spread and drop per loot kind — pickups are small and sit low, the
+## bell is a machine. Drop has to clear the sprite's own feet or the shadow's
+## dense middle hides behind it (see Fx.attach_shadow).
+const LOOT_SHADOW := {
+	"gem": Vector2(0.6, 4.0),
+	"nugget": Vector2(0.6, 4.0),
+	"crate": Vector2(1.0, 6.0),
+	"bell": Vector2(1.2, 6.0),
+	"relay": Vector2(1.0, 6.0),
+	"payload": Vector2(0.7, 5.0),
+}
+
 # State the HUD reads. Kept current on clients via _rpc_hud / _rpc_game_over.
 var oxygen := GameRules.OXYGEN_TIME
 var crates_left := GameRules.CRATE_COUNT
@@ -410,6 +422,7 @@ func _spawn_player(data: Variant) -> Node:
 	node.position = data.pos
 	node.meta = data.get("meta", {})
 	node.game = self
+	Fx.attach_shadow(node)
 	return node
 
 
@@ -418,6 +431,8 @@ func _spawn_enemy(data: Variant) -> Node:
 	node.position = data.pos
 	node.game = self
 	node.setup(data.kind, data.hp_scale)
+	# setup() has already applied the kind's scale, and the shadow rides it.
+	Fx.attach_shadow(node, 1.0, 7.0)
 	return node
 
 
@@ -441,6 +456,8 @@ func _spawn_loot(data: Variant) -> Node:
 			Sfx.play("bell", -5.0, 0.0)  # spawn replicates: rings on every peer
 	node.position = data.pos
 	node.set("game", self)
+	var shadow: Vector2 = LOOT_SHADOW.get(data.kind, Vector2(0.8, 5.0))
+	Fx.attach_shadow(node, shadow.x, shadow.y)
 	return node
 
 

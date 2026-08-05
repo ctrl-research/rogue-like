@@ -950,6 +950,28 @@ def gen_rock_tuft_atlas() -> list[list[tuple[int, int, int, int]]]:
     return px
 
 
+def gen_shadow(width: int = 16, height: int = 5) -> list[list[tuple[int, int, int, int]]]:
+    """Soft elliptical drop shadow, black with an alpha falloff. Squashed hard
+    on the vertical: it lies on the deck beneath a sprite that stands up, and a
+    taller ellipse buries its own dense middle behind the sprite, leaving only
+    the faint rim showing — which is invisible against a near-black seabed."""
+    px = []
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = (x - cx) / (cx + 0.5)
+            dy = (y - cy) / (cy + 0.5)
+            d = (dx * dx + dy * dy) ** 0.5
+            # Squared falloff: a denser core with a rim that fades out, rather
+            # than a uniform blob with a hard edge.
+            fade = max(0.0, 1.0 - d) ** 1.6
+            row.append((0, 0, 0, int(fade * 175)))
+        px.append(row)
+    return px
+
+
 def gen_ring(size: int = 64) -> list[list[tuple[int, int, int, int]]]:
     """Thin cyan ring for the sonar pulse visual (scaled up at runtime)."""
     c = (size - 1) / 2.0
@@ -974,13 +996,14 @@ def main() -> None:
         )
     write_png(os.path.join(OUT_DIR, "floor.png"), gen_floor())
     write_png(os.path.join(OUT_DIR, "light.png"), gen_light())
+    write_png(os.path.join(OUT_DIR, "shadow.png"), gen_shadow())
     write_png(os.path.join(OUT_DIR, "ring.png"), gen_ring())
     write_png(os.path.join(OUT_DIR, "rock.png"), gen_rock_atlas())
     write_png(os.path.join(OUT_DIR, "rock_edge.png"), gen_rock_edge_atlas())
     write_png(os.path.join(OUT_DIR, "rock_face.png"), gen_rock_face_atlas())
     write_png(os.path.join(OUT_DIR, "rock_growth.png"), gen_rock_growth_atlas())
     write_png(os.path.join(OUT_DIR, "rock_tuft.png"), gen_rock_tuft_atlas())
-    print(f"Wrote {len(SPRITES) + 8} sprites to {os.path.normpath(OUT_DIR)}")
+    print(f"Wrote {len(SPRITES) + 9} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":
