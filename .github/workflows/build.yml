@@ -67,11 +67,11 @@ jobs:
 
       # Self-playing solo run (random movement, auto-picked upgrades) so CI
       # exercises real gameplay paths, not just script compilation. Headless
-      # frames outpace real time (~100s of game per 15000 frames on CI), so
-      # the sim compresses swarm-quest waits to keep the depth-3 extract in
-      # budget.
+      # frames outpace real time (~140fps on CI runners, so ~7s of game per
+      # 1000 frames); 24000 frames ≈ 170s covers the five-depth descent to
+      # the boss lair with the sim's per-site assists.
       - name: Headless gameplay smoke test
-        run: ./godot --headless --path . --quit-after 15000 tests/headless_sim.tscn 2>&1 | tee -a build.log
+        run: ./godot --headless --path . --quit-after 24000 tests/headless_sim.tscn 2>&1 | tee -a build.log
 
       # Real two-instance WebRTC test through the actual signaling broker.
       # Skips (with a warning) only if the extension download was unavailable.

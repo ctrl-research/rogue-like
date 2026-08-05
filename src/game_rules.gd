@@ -39,6 +39,12 @@ const TOW_SPEED_SCALE := 0.6  # the payload carrier swims heavy
 const TOW_GRAB_RADIUS := 26.0  # touch range to pick up the payload
 const DELIVER_RADIUS := 60.0  # payload-to-bell-zone distance that completes
 
+# Boss lairs: every 5th depth is a dedicated boss stage — no quest roll,
+# just the Warden between the crew and the descent. Clearing one unlocks
+# the next winch-refit checkpoint at the station.
+const BOSS_DEPTH_INTERVAL := 5
+const BOSS_REWARD_BASE := 40  # lair guardian bounty, times depth
+
 
 static func xp_needed(level: int) -> int:
 	return 4 + level * 3
@@ -54,6 +60,14 @@ static func nugget_value(depth: int) -> int:
 
 static func quest_reward(depth: int) -> int:
 	return QUEST_REWARD_BASE * depth
+
+
+static func boss_reward(depth: int) -> int:
+	return BOSS_REWARD_BASE * depth
+
+
+static func is_boss_depth(depth: int) -> bool:
+	return depth % BOSS_DEPTH_INTERVAL == 0
 
 
 static func depth_hp_scale(depth: int) -> float:

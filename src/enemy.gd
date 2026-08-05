@@ -7,6 +7,7 @@ extends CharacterBody2D
 const TEXTURES := {
 	"barbfish": preload("res://assets/sprites/barbfish.png"),
 	"brute": preload("res://assets/sprites/brute.png"),
+	"warden": preload("res://assets/sprites/warden.png"),
 	"lurker": preload("res://assets/sprites/lurker.png"),
 	"jelly": preload("res://assets/sprites/jelly.png"),
 	"jelly_small": preload("res://assets/sprites/jelly.png"),
@@ -31,7 +32,22 @@ const KINDS := {
 	# it — the sonar pings lead the way.
 	"beast": {"speed": 62.0, "hp": 300.0, "damage": 24.0, "xp": 8, "scale": 1.5,
 			"leash": 240.0, "tint": Color(1.0, 0.6, 0.5)},
+	# The Trench Warden: boss-lair guardian (every 5th depth). Slow stalker
+	# that periodically winds up and charges, smashing through rock, and
+	# calls lurkers up from the dark. Wide leash — it owns the whole lair.
+	"warden": {"speed": 26.0, "hp": 2400.0, "damage": 34.0, "xp": 30, "scale": 2.0,
+			"leash": 340.0, "charge": true, "summon": true},
 }
+
+# Warden charge attack: stop and telegraph, then dash — the dash carves
+# through rock, so there is no safe pocket to hide in.
+const CHARGE_CD := 6.5
+const CHARGE_WINDUP := 0.8
+const CHARGE_SPEED := 300.0
+const CHARGE_TIME := 0.7
+const CHARGE_RANGE := 420.0
+const SUMMON_CD := 9.0
+const SUMMON_COUNT := 2
 
 const AMBUSH_RANGE := 110.0
 const LURKER_HIDDEN_ALPHA := 0.35
@@ -41,6 +57,7 @@ var game  # the Game node; untyped to avoid a class_name dependency cycle
 var speed := 42.0
 var hp := 12.0:
 	set = _set_hp
+var max_hp := 12.0  # set once in setup; the HUD boss bar reads hp/max_hp
 var contact_damage := 6.0
 var xp_value := 1
 
@@ -52,6 +69,11 @@ var _home := Vector2.ZERO
 var _last_pos := Vector2.ZERO
 var _idle_time := 0.0
 var _chew := 0.0
+var _charge_cd := CHARGE_CD  # warden: countdown to the next charge
+var _windup := 0.0  # warden: telegraph time left before the dash
+var _dash := 0.0  # warden: dash time left
+var _dash_dir := Vector2.ZERO
+var _summon_cd := SUMMON_CD
 
 
 func setup(new_kind: String, hp_scale: float) -> void:
@@ -63,6 +85,7 @@ func setup(new_kind: String, hp_scale: float) -> void:
 	xp_value = spec.xp
 	scale = Vector2.ONE * float(spec.get("scale", 1.0))
 	_ambushing = bool(spec.get("ambush", false))
+	max_hp = hp
 	$Sprite.texture = TEXTURES[kind]
 	# Whole-node modulate, not Sprite.self_modulate — hit flashes tween
 	# self_modulate back to white and would wipe a tint stored there.
@@ -102,7 +125,7 @@ func _on_exiting() -> void:
 		return
 	Fx.poof(game, global_position, Color(0.75, 0.45, 0.6))
 	Sfx.play_at("kill", global_position, -8.0)
-	if kind == "maw" or kind == "beast":
+	if kind in ["maw", "beast", "warden"]:
 		Sfx.play_at("explosion", global_position, -2.0)
 		Fx.shake_near(game, global_position, 420.0, 5.0)
 
@@ -141,6 +164,10 @@ func _server_tick(delta: float) -> void:
 		_stun_left -= delta
 		velocity = Vector2.ZERO
 		return
+	if bool(KINDS[kind].get("summon", false)):
+		_summon_tick(delta)
+	if bool(KINDS[kind].get("charge", false)) and _charge_tick(delta):
+		return
 	var target := _nearest_player()
 	var leash: float = KINDS[kind].get("leash", 0.0)
 	if leash > 0.0:
@@ -168,6 +195,48 @@ func _server_tick(delta: float) -> void:
 	velocity = dir * speed
 	move_and_slide()
 	_chew_rock(dir, delta)
+
+
+## Warden: calls lurkers up from the dark on a fixed cadence.
+func _summon_tick(delta: float) -> void:
+	_summon_cd -= delta
+	if _summon_cd > 0.0:
+		return
+	_summon_cd = SUMMON_CD
+	for i in SUMMON_COUNT:
+		game._spawn_enemy_deferred("lurker",
+				global_position + Vector2.from_angle(randf() * TAU) * 44.0)
+
+
+## Warden charge: stop and telegraph, then a rock-smashing dash toward the
+## nearest diver. Returns true while the charge owns this frame's movement.
+func _charge_tick(delta: float) -> bool:
+	if _dash > 0.0:
+		_dash -= delta
+		velocity = _dash_dir * CHARGE_SPEED
+		move_and_slide()
+		# The dash carves through rock — a drilled pocket is no shelter.
+		game.terrain.destroy_in_radius(global_position + _dash_dir * 18.0, 14.0)
+		return true
+	if _windup > 0.0:
+		_windup -= delta
+		velocity = Vector2.ZERO
+		if _windup <= 0.0:
+			var target := _nearest_player()
+			if target != null:
+				_dash = CHARGE_TIME
+				_dash_dir = (target.global_position - global_position).normalized()
+				Sfx.play_at("explosion", global_position, -8.0)
+		return true
+	_charge_cd -= delta
+	if _charge_cd <= 0.0:
+		var target := _nearest_player()
+		if target != null and global_position.distance_to(target.global_position) <= CHARGE_RANGE:
+			_charge_cd = CHARGE_CD
+			_windup = CHARGE_WINDUP
+			game.spawn_ring(global_position, 60.0)  # telegraph on every peer
+			return true
+	return false
 
 
 ## No pathfinding in the trench: fauna blocked by rock slowly eat through

@@ -173,9 +173,11 @@ Milestone 0 ships Barbfish + Angler brute only.
   divers on the spot repair faster) and escort the payload (touch to tow;
   the carrier swims at 60% speed and reads as easy prey to fauna, deliver
   to the bell zone at the arena center).
-- **M8 — planned** — boss lairs every 5th depth with a dedicated boss, and
-  buyable start-depth checkpoints (winch refit) sold at the station after
-  a lair is cleared.
+- **M8 — this PR** — boss lairs every 5th depth guarded by the Trench
+  Warden (telegraphed rock-smashing charges, summons lurkers, HUD boss
+  bar, big bounty), and buyable start-depth checkpoints: clearing a lair
+  unlocks the next winch refit at the station (tier N costs 200×N, dives
+  may then start at depth 5N+1 — bought progress, not free progress).
 - **M9 — planned** — the submarine: walkable interior homebase that doubles
   as the multiplayer lobby (stash, upgrade console, diver locker, hatch).
 
