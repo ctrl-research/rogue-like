@@ -26,9 +26,15 @@ const ORE_PLACEMENT_TRIES := 40  # sampling attempts to find rock per pocket
 const EDGE_TEXTURE := preload("res://assets/sprites/rock_edge.png")
 const FACE_TEXTURE := preload("res://assets/sprites/rock_face.png")
 const GROWTH_TEXTURE := preload("res://assets/sprites/rock_growth.png")
+const WEED_TEXTURE := preload("res://assets/sprites/rock_weed.png")
+const TUFT_TEXTURE := preload("res://assets/sprites/rock_tuft.png")
 const EDGE_MASKS := 8  # atlas columns: exposure bitmask N|W|E
 const GROWTH_VARIANTS := 4
-const GROWTH_CHANCE := 32  # percent of exposed lips that sprout something
+const WEED_VARIANTS := 4
+const TUFT_COLUMNS := 3  # west, east, both
+const GROWTH_CHANCE := 50  # percent of exposed lips that sprout an overhang
+const WEED_CHANCE := 34  # percent of rock tops carrying a weed mat
+const TUFT_CHANCE := 44  # percent of exposed side rims collecting tufts
 
 ## Server broadcasts destruction; ore cells also announce themselves here so
 ## the game can drop salvage nuggets (server only).
@@ -38,6 +44,8 @@ var initial_ore_cells := 0  # determinism fingerprint (see e2e)
 
 var _edges: TileMapLayer  # lit rims on exposed north/west/east sides
 var _faces: TileMapLayer  # the wall front, in the open cell below a rock
+var _weed: TileMapLayer  # mats bedded flat on the rock tops
+var _tufts: TileMapLayer  # growth clinging to exposed side rims
 var _growth: TileMapLayer  # weed overhanging a lip, straddling the edge
 
 ## Rock coverage rises with depth: more drilling the deeper you go.
@@ -60,7 +68,13 @@ func _ready() -> void:
 	_edges = _add_dressing_layer(EDGE_TEXTURE, EDGE_MASKS, Vector2.ZERO)
 	# A whole cell down, so a wall's front lands in the open cell below it.
 	_faces = _add_dressing_layer(FACE_TEXTURE, VARIANTS + 1, Vector2(0, CELL))
-	# Half a cell down, so growth straddles the lip and overhangs the front.
+	# Growth on the rock's own plane: mats bedded flat on the top face, tufts
+	# fringing the side rims. Both stay within their own cell, so they never
+	# collide with a face — only the overhang below has to be drawn last.
+	_weed = _add_dressing_layer(WEED_TEXTURE, WEED_VARIANTS, Vector2.ZERO)
+	_tufts = _add_dressing_layer(TUFT_TEXTURE, TUFT_COLUMNS, Vector2.ZERO)
+	# Half a cell down, so the overhang straddles the lip and dangles over
+	# the front — this is what breaks the tile grid's silhouette.
 	_growth = _add_dressing_layer(GROWTH_TEXTURE, GROWTH_VARIANTS, Vector2(0, CELL / 2))
 
 
@@ -151,9 +165,8 @@ func _is_ore(cell: Vector2i) -> bool:
 
 
 func _dress_all() -> void:
-	_edges.clear()
-	_faces.clear()
-	_growth.clear()
+	for layer in [_edges, _faces, _weed, _tufts, _growth]:
+		layer.clear()
 	for cell in get_used_cells():
 		_dress_cell(cell)
 
@@ -163,26 +176,38 @@ func _dress_all() -> void:
 ## growth that hangs over the edge. Keyed off the cell coordinates, so every
 ## peer arrives at the same dressing without a word over the network.
 func _dress_cell(cell: Vector2i) -> void:
-	_edges.erase_cell(cell)
-	_faces.erase_cell(cell)
-	_growth.erase_cell(cell)
+	for layer in [_edges, _faces, _weed, _tufts, _growth]:
+		layer.erase_cell(cell)
 	if get_cell_source_id(cell) == -1:
 		return
+	var is_ore := _is_ore(cell)
 
+	var west_open := get_cell_source_id(cell + Vector2i.LEFT) == -1
+	var east_open := get_cell_source_id(cell + Vector2i.RIGHT) == -1
 	var mask := 0
 	if get_cell_source_id(cell + Vector2i.UP) == -1:
 		mask |= 1
-	if get_cell_source_id(cell + Vector2i.LEFT) == -1:
+	if west_open:
 		mask |= 2
-	if get_cell_source_id(cell + Vector2i.RIGHT) == -1:
+	if east_open:
 		mask |= 4
 	if mask > 0:
 		_edges.set_cell(cell, 0, Vector2i(mask, 0))
 
+	# Mats bed on any rock top, buried or not — but never on ore, so a seam
+	# stays legible as something worth digging for.
+	if not is_ore and _dress_hash(cell, 23, 41) % 100 < WEED_CHANCE:
+		_weed.set_cell(cell, 0, Vector2i(_dress_hash(cell, 3, 19) % WEED_VARIANTS, 0))
+
+	# Tufts fringe whichever side rims meet open water.
+	if (west_open or east_open) and _dress_hash(cell, 37, 29) % 100 < TUFT_CHANCE:
+		var column := 2 if west_open and east_open else (0 if west_open else 1)
+		_tufts.set_cell(cell, 0, Vector2i(column, 0))
+
 	if get_cell_source_id(cell + Vector2i.DOWN) != -1:
-		return  # buried: no front to show, nothing to grow on
-	var column := ORE_VARIANT if _is_ore(cell) else _dress_hash(cell, 7, 13) % VARIANTS
-	_faces.set_cell(cell, 0, Vector2i(column, 0))
+		return  # buried lip: no front to show, nothing to hang over
+	var face := ORE_VARIANT if is_ore else _dress_hash(cell, 7, 13) % VARIANTS
+	_faces.set_cell(cell, 0, Vector2i(face, 0))
 	if _dress_hash(cell, 31, 17) % 100 < GROWTH_CHANCE:
 		_growth.set_cell(cell, 0, Vector2i(_dress_hash(cell, 11, 5) % GROWTH_VARIANTS, 0))
 
