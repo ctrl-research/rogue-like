@@ -117,6 +117,11 @@ func _run_verified(min_elapsed: float) -> bool:
 ## unlucky runs no longer stumble into it either. So this is the only place the
 ## co-op mechanic gets tested.
 func _run_revive_drill() -> void:
+	# Let the client finish its own run-1 verification first. It evaluates from
+	# its synced `elapsed`, so it lands a moment after the host does — and it
+	# checks enemies are replicating, once. Clearing the arena below before that
+	# happens fails that check permanently and the client never gets past run 1.
+	await get_tree().create_timer(3.0).timeout
 	var cs := get_tree().current_scene
 	var casualty: Player = null
 	var rescuer: Player = null
@@ -193,8 +198,10 @@ func _watch_own_revive() -> void:
 
 
 func _return_crew_to_lobby() -> void:
-	# Give the client time to finish its own run-1 verification first.
-	await get_tree().create_timer(3.0).timeout
+	# Short pause so the client can log its revive observation before the scene
+	# changes underneath it. The wait that protects run-1 verification now lives
+	# at the top of the revive drill, which runs before this.
+	await get_tree().create_timer(1.0).timeout
 	print("[e2e-host] returning crew to lobby")
 	Net.return_to_lobby()
 
