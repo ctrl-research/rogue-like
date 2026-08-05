@@ -203,6 +203,39 @@ func player_count() -> int:
 	return multiplayer.get_peers().size() + 1
 
 
+# --- Sub (lobby) channel -----------------------------------------------------
+## Peers enter and leave the sub at different moments — start_dive() moves the
+## host into the game scene BEFORE telling the crew, so for a few frames a
+## client is still walking the sub while the host is already diving. RPCs
+## addressed to a node inside the sub scene would land on a peer that no
+## longer has it ("node not found", and the same for synchronizer traffic), so
+## the sub's roster and movement ride this autoload instead: a path that
+## always exists. Peers no longer aboard simply have nothing connected to
+## these signals, so the message is dropped harmlessly.
+
+signal sub_aboard_received(pid: int, diver_id: String)
+signal sub_roster_received(roster: Dictionary)
+signal sub_pos_received(pid: int, pos: Vector2)
+
+
+## Client -> host: "I'm aboard, diving as this class."
+@rpc("any_peer", "reliable")
+func sub_aboard(diver_id: String) -> void:
+	sub_aboard_received.emit(multiplayer.get_remote_sender_id(), diver_id)
+
+
+## Host -> everyone: the authoritative pid -> diver_id roster.
+@rpc("authority", "call_local", "reliable")
+func sub_roster(roster: Dictionary) -> void:
+	sub_roster_received.emit(roster)
+
+
+## Anyone -> everyone: where my diver is standing (movement is owner-driven).
+@rpc("any_peer", "unreliable_ordered")
+func sub_pos(pos: Vector2) -> void:
+	sub_pos_received.emit(multiplayer.get_remote_sender_id(), pos)
+
+
 @rpc("authority", "reliable")
 func _rpc_change_to_game() -> void:
 	_change_to_game()

@@ -4,12 +4,15 @@ extends Node2D
 ## the LOCKER (diver classes), the STASH (the ledger), or the HATCH (the
 ## lead diver starts the dive; the crew leaves or disbands here too).
 ##
-## Roster model: no MultiplayerSpawner — joiners can arrive before their
-## scene loads, so spawn replication could be dropped. Instead the host owns
-## a pid -> diver_id roster and broadcasts it on every change; each peer
-## reconciles deterministically-named local nodes (Divers/D<pid>), and the
-## per-diver MultiplayerSynchronizer syncs positions by matching paths.
-## Clients announce themselves (with retry) until they appear in the roster.
+## Roster model: no MultiplayerSpawner and no per-diver synchronizers —
+## joiners can arrive before their scene loads, and the host leaves the sub
+## a few frames before the crew does, so anything addressed to a node inside
+## this scene can land on a peer that hasn't built it yet or has already
+## moved on. Instead the host owns a pid -> diver_id roster broadcast over
+## the Net lobby channel (see net.gd), each peer reconciles
+## deterministically-named local nodes (Divers/D<pid>), and each diver's
+## owner broadcasts its own position. Clients announce themselves (with
+## retry) until they appear in the roster.
 
 const DIVER_SCENE := preload("res://scenes/sub_diver.tscn")
 
@@ -46,7 +49,10 @@ func _ready() -> void:
 	Station.changed.connect(_on_station_changed)
 	Net.player_count_changed.connect(_refresh_wall_text)
 	Net.session_ended.connect(func() -> void: Net.leave())
+	Net.sub_roster_received.connect(_on_roster)
+	Net.sub_pos_received.connect(_on_remote_pos)
 	if multiplayer.is_server():
+		Net.sub_aboard_received.connect(_on_aboard)
 		multiplayer.peer_disconnected.connect(_on_peer_left)
 		_roster[1] = Station.diver
 		_broadcast_roster()
@@ -65,7 +71,7 @@ func _process(delta: float) -> void:
 		_announce_cd -= delta
 		if _announce_cd <= 0.0:
 			_announce_cd = 0.5
-			_rpc_aboard.rpc_id(1, Station.diver)
+			Net.sub_aboard.rpc_id(1, Station.diver)
 	_update_prompt()
 
 
@@ -89,18 +95,20 @@ func _unhandled_input(event: InputEvent) -> void:
 # --- Roster ------------------------------------------------------------------
 
 
-@rpc("any_peer", "reliable")
-func _rpc_aboard(diver_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	var pid := multiplayer.get_remote_sender_id()
+## Host: a crew member announced themselves (or changed class at the locker).
+func _on_aboard(pid: int, diver_id: String) -> void:
 	if _roster.get(pid, "") != diver_id:
 		_roster[pid] = diver_id
 		_broadcast_roster()
 
 
-@rpc("authority", "call_local", "reliable")
-func _rpc_roster(roster: Dictionary) -> void:
+func _on_remote_pos(pid: int, pos: Vector2) -> void:
+	var node: Node = divers.get_node_or_null("D%d" % pid)
+	if node != null and not node.is_queued_for_deletion():
+		node.remote_position(pos)
+
+
+func _on_roster(roster: Dictionary) -> void:
 	_roster = roster
 	for child in divers.get_children():
 		var pid := int(str(child.name).trim_prefix("D"))
@@ -126,7 +134,7 @@ func _rpc_roster(roster: Dictionary) -> void:
 
 
 func _broadcast_roster() -> void:
-	_rpc_roster.rpc(_roster)
+	Net.sub_roster.rpc(_roster)
 
 
 func _on_peer_left(pid: int) -> void:
@@ -142,7 +150,7 @@ func _on_station_changed() -> void:
 			_roster[1] = Station.diver
 			_broadcast_roster()
 	else:
-		_rpc_aboard.rpc_id(1, Station.diver)
+		Net.sub_aboard.rpc_id(1, Station.diver)
 	if _panel.visible:
 		_open_panel(_panel_kind)  # rebuild with fresh prices/levels
 	_refresh_wall_text()
