@@ -656,22 +656,73 @@ SPRITES = {
 }
 
 
+def _value_noise_tile(size: int, period: int, seed: int) -> list[list[float]]:
+    """Tileable value noise in 0..1. The lattice wraps at `period`, so as long
+    as period divides size the tile butts against itself seamlessly — which the
+    seabed needs, since one tile is repeated across the whole arena."""
+    step = size // period
+    lattice = [
+        [(_hash2(gx + 1, (gy + 1) * 131 + seed) % 1000) / 999.0 for gx in range(period)]
+        for gy in range(period)
+    ]
+    out = [[0.0 for _ in range(size)] for _ in range(size)]
+    for y in range(size):
+        for x in range(size):
+            fx = x / step
+            fy = y / step
+            x0 = int(fx) % period
+            y0 = int(fy) % period
+            x1 = (x0 + 1) % period
+            y1 = (y0 + 1) % period
+            # Smoothstep the interpolation, or the lattice shows up as
+            # diamond-shaped facets.
+            tx = fx - int(fx)
+            ty = fy - int(fy)
+            sx = tx * tx * (3 - 2 * tx)
+            sy = ty * ty * (3 - 2 * ty)
+            top = lattice[y0][x0] * (1 - sx) + lattice[y0][x1] * sx
+            bottom = lattice[y1][x0] * (1 - sx) + lattice[y1][x1] * sx
+            out[y][x] = top * (1 - sy) + bottom * sy
+    return out
+
+
+FLOOR_TILE = 128
+
+
 def gen_floor() -> list[list[tuple[int, int, int, int]]]:
-    """32x32 seabed tile: dark blue-green with deterministic speckles."""
+    """Seabed tile built from three octaves of tileable value noise, so silt
+    gathers in drifts. The old version keyed colour off `(x*31 + y*17) % 97`,
+    and a linear function under a modulo lays down a regular diagonal lattice.
+
+    128px rather than 32: the arena repeats this one tile across 1600px, and at
+    32 the drifts were big enough relative to the tile that the repeat read as
+    a grid — worse than the speckle it replaced. Bigger tile, finer features."""
+    deep = hex_rgba("#08161f")
     base = hex_rgba("#0a1c2b")
-    dark = hex_rgba("#081624")
-    speck = hex_rgba("#14324a")
+    mid = hex_rgba("#0c2030")
+    silt = hex_rgba("#123049")
     algae = hex_rgba("#0f2e33")
-    px = [[base for _ in range(32)] for _ in range(32)]
-    # Deterministic pseudo-random speckling (no RNG so output is reproducible).
-    for y in range(32):
-        for x in range(32):
-            h = (x * 31 + y * 17) % 97
-            if h < 6:
-                px[y][x] = speck
-            elif h < 12:
-                px[y][x] = dark
-            elif h in (40, 41):
+    size = FLOOR_TILE
+    broad = _value_noise_tile(size, 8, 11)  # slow sediment drifts
+    medium = _value_noise_tile(size, 16, 29)
+    grain = _value_noise_tile(size, 64, 47)  # per-pixel-ish grit
+    px = [[base for _ in range(size)] for _ in range(size)]
+    for y in range(size):
+        for x in range(size):
+            n = broad[y][x] * 0.4 + medium[y][x] * 0.3 + grain[y][x] * 0.3
+            # Narrow bands: the seabed wants texture, not tonal blotches.
+            if n < 0.38:
+                px[y][x] = deep
+            elif n < 0.46:
+                px[y][x] = mid
+            elif n < 0.70:
+                px[y][x] = base
+            elif n < 0.78:
+                px[y][x] = mid
+            else:
+                px[y][x] = silt
+            # Algae settles where the grit peaks inside a darker drift.
+            if grain[y][x] > 0.88 and broad[y][x] < 0.45:
                 px[y][x] = algae
     return px
 
@@ -846,49 +897,30 @@ def gen_rock_growth_atlas() -> list[list[tuple[int, int, int, int]]]:
                 crest = max(1, round((2 + h % 3) * (0.5 + 0.5 * taper)))
                 for y in range(crest):
                     px[y][x] = lite if y >= crest - 1 else mid
-                frond = round((3 + (h >> 3) % 7) * taper)
+                # Long enough to trail past the bottom of the wall front and
+                # hang free in the water — the drape is the whole point.
+                frond = round((5 + (h >> 3) % 8) * taper)
                 if frond > 2:
                     tip = min(16, crest + frond)
+                    sway = 1 if (h >> 11) % 2 else -1
+                    last = None
                     for y in range(crest, tip):
-                        # Fronds darken as they fall away from the lit lip.
-                        px[y][x] = dark if y > crest + 2 else mid
-                    if frond >= 6:
-                        px[tip - 1][x] = glow  # bioluminescent bud
-    return px
-
-
-def gen_rock_weed_atlas() -> list[list[tuple[int, int, int, int]]]:
-    """64x16 atlas: four weed colonies bedded on a rock's top face. We look
-    straight down at this plane, so a colony has to read as strands splayed out
-    from a root — rounded blobs just look like rivets hammered into the stone.
-    The overhang atlas handles anything that dangles over an edge."""
-    clear = (0, 0, 0, 0)
-    deep = hex_rgba(GROWTH_DEEP)
-    mid = hex_rgba(GROWTH_MID)
-    lite = hex_rgba(GROWTH_LITE)
-    glow = hex_rgba(GROWTH_GLOW)
-    px = [[clear for _ in range(64)] for _ in range(16)]
-    directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
-    for variant in range(4):
-        for mat in range(1 + _hash2(variant + 1, 5) % 2):
-            h = _hash2(variant * 7 + mat * 3 + 1, 91)
-            cx = 3 + h % 10
-            cy = 3 + (h >> 5) % 10
-            for strand in range(4 + (h >> 9) % 5):
-                sh = _hash2(variant * 31 + mat * 11 + strand + 1, 53)
-                dx, dy = directions[sh % 8]
-                length = 2 + (sh >> 3) % 3
-                for step in range(1, length + 1):
-                    x = cx + dx * step
-                    y = cy + dy * step
-                    if 0 <= x < 16 and 0 <= y < 16:
-                        px[y][variant * 16 + x] = mid if step < length else deep
-                if length == 4 and (sh >> 6) % 4 == 0:
-                    x = cx + dx * length
-                    y = cy + dy * length
-                    if 0 <= x < 16 and 0 <= y < 16:
-                        px[y][variant * 16 + x] = glow  # a bud on a long strand
-            px[cy][variant * 16 + cx] = lite  # the root catches the light
+                        fall = y - crest
+                        # Curls to one side as it falls, so a frond drapes
+                        # instead of hanging like a plumb line.
+                        column = lx + sway * (fall // 4)
+                        if 0 <= column < 16:
+                            # Fronds darken as they fall away from the lit lip,
+                            # holding the mid tone a while so the drape still
+                            # reads against the dark wall front behind it.
+                            px[y][variant * 16 + column] = dark if fall > 4 else mid
+                            last = (y, column)
+                        # Doubled up near the crown: a single pixel column
+                        # reads as a hair, not a frond.
+                        if fall < 3 and 0 <= column + sway < 16:
+                            px[y][variant * 16 + column + sway] = mid
+                    if frond >= 8 and last is not None:
+                        px[last[0]][variant * 16 + last[1]] = glow  # bud
     return px
 
 
@@ -947,9 +979,8 @@ def main() -> None:
     write_png(os.path.join(OUT_DIR, "rock_edge.png"), gen_rock_edge_atlas())
     write_png(os.path.join(OUT_DIR, "rock_face.png"), gen_rock_face_atlas())
     write_png(os.path.join(OUT_DIR, "rock_growth.png"), gen_rock_growth_atlas())
-    write_png(os.path.join(OUT_DIR, "rock_weed.png"), gen_rock_weed_atlas())
     write_png(os.path.join(OUT_DIR, "rock_tuft.png"), gen_rock_tuft_atlas())
-    print(f"Wrote {len(SPRITES) + 9} sprites to {os.path.normpath(OUT_DIR)}")
+    print(f"Wrote {len(SPRITES) + 8} sprites to {os.path.normpath(OUT_DIR)}")
 
 
 if __name__ == "__main__":
