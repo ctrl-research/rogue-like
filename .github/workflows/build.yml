@@ -63,7 +63,8 @@ jobs:
       - name: Station meta-progression unit test
         run: |
           set -euo pipefail
-          ./godot --headless --path . tests/station_test.tscn 2>&1 | tee -a build.log | grep -q "STATION_TEST_OK"
+          ./godot --headless --path . tests/station_test.tscn 2>&1 | tee -a build.log
+          grep -q "STATION_TEST_OK" build.log
 
       # Self-playing solo run (random movement, auto-picked upgrades) so CI
       # exercises real gameplay paths, not just script compilation. Headless
@@ -74,11 +75,16 @@ jobs:
       # evolutions, bells, quest variety, digging, extraction, banking) and
       # prints SIM_OK only if every one is met, so losing coverage fails the
       # build instead of quietly passing.
+      # Checked against build.log AFTER the run, not piped into `grep -q`:
+      # grep -q exits on its first match and SIGPIPEs tee, which truncates
+      # everything the sim printed afterwards — including anything the
+      # parse-error check below needs to see. The sim also exits non-zero on
+      # SIM_FAIL, so pipefail catches that independently.
       - name: Headless gameplay smoke test
         run: |
           set -euo pipefail
-          ./godot --headless --path . --quit-after 24000 tests/headless_sim.tscn 2>&1 \
-            | tee -a build.log | grep -q "SIM_OK"
+          ./godot --headless --path . --quit-after 24000 tests/headless_sim.tscn 2>&1 | tee -a build.log
+          grep -q "SIM_OK" build.log
 
       # Real two-instance WebRTC test through the actual signaling broker.
       # Skips (with a warning) only if the extension download was unavailable.
