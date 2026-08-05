@@ -33,29 +33,42 @@ func _process(delta: float) -> void:
 	_status_cd -= delta
 	if _status_cd <= 0.0:
 		_status_cd = 10.0
-		print("[sim] t=%3ds hp=%d/%d lv=%d xp=%d/%d enemies=%d depth=%d crates=%d haul=%d choice=%s over=%s" % [
+		print("[sim] t=%3ds hp=%d/%d lv=%d xp=%d/%d enemies=%d depth=%d quest=%s crates=%d haul=%d choice=%s over=%s" % [
 			int(_game.elapsed), int(_player.hp), int(_player.max_hp),
 			_game.team_level, _game.team_xp, _game.xp_needed,
-			_game.enemies.get_child_count(), _game.depth, _game.crates_left,
-			_game.salvage_earned, _game.awaiting_choice, _game.game_over,
+			_game.enemies.get_child_count(), _game.depth, _game.quest_kind,
+			_game.crates_left, _game.salvage_earned, _game.awaiting_choice, _game.game_over,
 		])
 	_steer_cd -= delta
 	if _steer_cd <= 0.0:
 		_steer_cd = 0.2
 		_steer()
-	# The bot is a poor crate courier, so after a grace period the harness
-	# collects crates server-side (one per tick) to deterministically reach
-	# the bell -> descend -> extract loop.
-	if multiplayer.is_server() and _game.crates_left > 0 and _game.elapsed > 20.0 * _game.depth:
-		for c in get_tree().get_nodes_in_group("crates"):
-			if not c.is_queued_for_deletion():
-				_game.on_crate_collected()
-				c.queue_free()
-				break
+	# The bot is a poor quest hero, so after a grace period the harness
+	# force-completes the objective server-side (crates one per tick, the
+	# beast in one blow; the swarm rides its own timer) to deterministically
+	# reach the bell -> descend -> extract loop.
+	if multiplayer.is_server() and not _game.quest_done and _game.elapsed > 20.0 * _game.depth:
+		match _game.quest_kind:
+			"crates":
+				for c in get_tree().get_nodes_in_group("crates"):
+					if not c.is_queued_for_deletion():
+						_game.on_crate_collected()
+						c.queue_free()
+						break
+			"hunt":
+				var beast: Enemy = _game._find_beast()
+				if beast != null:
+					print("[sim] hunt assist: putting down the beast")
+					beast.take_damage(1e9)
+			"swarm":
+				# Compress the swarm 4x: headless frames outpace real time,
+				# so a full 70s wait would eat the frame budget before the
+				# run ever reaches the depth-3 extract.
+				_game._site_started -= delta * 3.0
 
 	# If the bot can't fight its way onto the bell (the Maw camps it), warp
 	# it there so the descend/extract flow still gets exercised.
-	if multiplayer.is_server() and _game.crates_left == 0 and not _game.awaiting_choice \
+	if multiplayer.is_server() and _game.quest_done and not _game.awaiting_choice \
 			and not _game.game_over:
 		_bell_wait += delta
 		if _bell_wait > 25.0 and not _player.dead and not _player.downed:
@@ -84,7 +97,12 @@ func _process(delta: float) -> void:
 func _steer() -> void:
 	var pos := _player.global_position
 	var dir := Vector2.ZERO
-	var obj_group: String = "crates" if _game.crates_left > 0 else "bell"
+	# Work the current quest's objective: crates while they stand, then the
+	# bell once the quest is done. Swarm/hunt sites have nothing to fetch —
+	# surviving (and the harness assist) carries those.
+	var obj_group: String = "bell"
+	if _game.quest_kind == "crates" and _game.crates_left > 0:
+		obj_group = "crates"
 	var objective := _nearest_in_group(obj_group, pos, INF)
 	var threat := _nearest_in_group("enemies", pos, 90.0)
 	# Flee is suppressed near the bell — the Maw guards it, and a bot that

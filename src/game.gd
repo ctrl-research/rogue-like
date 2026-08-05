@@ -20,6 +20,9 @@ const WALL_LAYER := 4
 # State the HUD reads. Kept current on clients via _rpc_hud / _rpc_game_over.
 var oxygen := GameRules.OXYGEN_TIME
 var crates_left := GameRules.CRATE_COUNT
+var quest_kind := "crates"  # this depth's mini quest (see GameRules.QUEST_KINDS)
+var quest_progress := 0.0  # swarm: seconds left (crates use crates_left)
+var quest_done := false  # objective complete, bell is down
 var team_level := 1
 var team_xp := 0
 var xp_needed := GameRules.xp_needed(1)
@@ -41,7 +44,10 @@ var _max_oxygen := GameRules.OXYGEN_TIME
 var _spawn_accum := 0.0
 var _hud_accum := 0.0
 var _bell: Area2D
-var _maw_spawned := false  # one Trench Maw per site
+var _maw_spawned := false  # one Trench Maw per site (crate quests only)
+var _quest_bag: Array = []  # shuffled draw pile for per-depth quest rolls
+var _site_started := 0.0  # `elapsed` when this site began (swarm timer)
+var _ping_cd := 0.0  # hunt quest: sonar ping cadence
 var _rng := RandomNumberGenerator.new()
 
 @onready var players: Node2D = $Players
@@ -83,6 +89,7 @@ func _process(delta: float) -> void:
 		if decision_left <= 0.0:
 			choose_extract()
 	else:
+		_tick_quest(delta)
 		_spawn_waves(delta)
 		_check_extraction(delta)
 
@@ -90,7 +97,8 @@ func _process(delta: float) -> void:
 	if _hud_accum >= HUD_SYNC_INTERVAL:
 		_hud_accum = 0.0
 		_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed,
-				extraction_progress, depth, salvage_earned, awaiting_choice, decision_left)
+				extraction_progress, depth, salvage_earned, awaiting_choice, decision_left,
+				quest_kind, quest_progress, quest_done)
 
 
 # --- Server API called by gameplay nodes ---------------------------------
@@ -147,6 +155,8 @@ func on_enemy_killed(enemy: Enemy) -> void:
 			# The bloom splits.
 			for offset in [Vector2(-14, 0), Vector2(14, 0)]:
 				_spawn_enemy_deferred.call_deferred("jelly_small", enemy.global_position + offset)
+		"beast":
+			on_beast_killed(enemy.global_position)
 		"maw":
 			salvage_earned += 10 * depth
 			for i in 4:
@@ -181,8 +191,67 @@ func on_crate_collected() -> void:
 	if crates_left > 0:
 		_rpc_toast.rpc("Salvage secured (+%d) — %d left" % [GameRules.crate_value(depth), crates_left])
 	else:
-		_spawn_loot_deferred.call_deferred("bell", GameRules.ARENA_SIZE / 2.0)
-		_rpc_toast.rpc("All salvage secured! The dive bell has dropped — get to it!")
+		_complete_quest("All salvage secured!")
+
+
+# --- Mini quests -----------------------------------------------------------
+
+
+## Server: per-site quest ticking — the swarm timer and the hunt's sonar
+## pings. Crates complete via on_crate_collected instead.
+func _tick_quest(delta: float) -> void:
+	if quest_done:
+		return
+	match quest_kind:
+		"swarm":
+			quest_progress = maxf(0.0, GameRules.SWARM_TIME - (elapsed - _site_started))
+			if quest_progress <= 0.0:
+				salvage_earned += GameRules.quest_reward(depth)
+				_complete_quest("The swarm relents — hazard pay earned (+%d)!" % GameRules.quest_reward(depth))
+		"hunt":
+			_ping_cd -= delta
+			var beast := _find_beast()
+			if beast != null and _ping_cd <= 0.0:
+				_ping_cd = 5.0
+				spawn_ring(beast.global_position, 90.0)
+
+
+func on_beast_killed(pos: Vector2) -> void:
+	salvage_earned += GameRules.quest_reward(depth)
+	for i in 4:
+		_spawn_loot_deferred.call_deferred(
+				"gem", pos + Vector2.from_angle(TAU * i / 4.0) * 18.0)
+	_complete_quest("The beast is slain — its hoard is yours (+%d)!" % GameRules.quest_reward(depth))
+
+
+## Server: the site objective is met — drop the bell and say so in one toast
+## (toasts overwrite each other, so the flourish and the bell share a line).
+func _complete_quest(flourish: String) -> void:
+	if quest_done:
+		return
+	quest_done = true
+	_spawn_loot_deferred.call_deferred("bell", GameRules.ARENA_SIZE / 2.0)
+	_rpc_toast.rpc("%s The dive bell has dropped — get to it!" % flourish)
+
+
+## Depth 1 always teaches the classic crate quest; deeper depths draw from a
+## shuffled bag so a run sees every quest before any repeat.
+func _roll_quest() -> String:
+	if depth == 1:
+		return "crates"
+	if _quest_bag.is_empty():
+		_quest_bag = GameRules.QUEST_KINDS.duplicate()
+	var i := _rng.randi() % _quest_bag.size()
+	var kind: String = _quest_bag[i]
+	_quest_bag.remove_at(i)
+	return kind
+
+
+func _find_beast() -> Enemy:
+	for e in enemies.get_children():
+		if e is Enemy and e.kind == "beast" and not e.is_queued_for_deletion():
+			return e
+	return null
 
 
 ## Digging into an ore seam shakes a nugget loose. Deferred: destruction is
@@ -340,12 +409,18 @@ func _start_run(pids: Array[int]) -> void:
 			"pos": GameRules.ARENA_SIZE / 2.0 + offsets[i % offsets.size()],
 			"meta": _metas.get(pids[i], {}),
 		})
-	_rpc_toast.rpc("Recover %d salvage crates, then reach the dive bell. Watch your O2." % GameRules.CRATE_COUNT)
 
 
-## Server: roll the site layout, broadcast so every peer builds identical
-## terrain, then place the crates in their carved clearings.
+## Server: roll the quest and the site layout, broadcast so every peer builds
+## identical terrain, then stage the quest in the carved clearings.
 func _build_site() -> void:
+	quest_kind = _roll_quest()
+	quest_done = false
+	quest_progress = GameRules.SWARM_TIME if quest_kind == "swarm" else 0.0
+	crates_left = GameRules.CRATE_COUNT if quest_kind == "crates" else 0
+	_site_started = elapsed
+	_ping_cd = 0.0
+
 	var spots := PackedVector2Array()
 	var center := GameRules.ARENA_SIZE / 2.0
 	for i in GameRules.CRATE_COUNT:
@@ -357,8 +432,17 @@ func _build_site() -> void:
 			)
 		spots.append(pos)
 	_rpc_build_site.rpc(_rng.randi(), depth, spots)
-	for spot in spots:
-		$LootSpawner.spawn({"kind": "crate", "pos": spot})
+
+	match quest_kind:
+		"crates":
+			for spot in spots:
+				$LootSpawner.spawn({"kind": "crate", "pos": spot})
+			_rpc_toast.rpc("Quest: recover %d salvage crates. Watch your O2." % GameRules.CRATE_COUNT)
+		"swarm":
+			_rpc_toast.rpc("Quest: the water boils — survive the swarm for %ds!" % int(GameRules.SWARM_TIME))
+		"hunt":
+			_spawn_beast(spots[_rng.randi() % spots.size()])
+			_rpc_toast.rpc("Quest: hunt the beast — follow the sonar pings.")
 
 
 @rpc("authority", "call_local", "reliable")
@@ -375,6 +459,8 @@ func _spawn_offsets() -> Array[Vector2]:
 func _spawn_waves(delta: float) -> void:
 	_spawn_accum += delta
 	var interval := clampf(1.8 - elapsed * 0.008, 0.4, 1.8) * GameRules.depth_interval_scale(depth)
+	if quest_kind == "swarm" and not quest_done:
+		interval *= GameRules.SWARM_SPAWN_SCALE
 	if _spawn_accum < interval or enemies.get_child_count() >= GameRules.ENEMY_CAP:
 		return
 	_spawn_accum = 0.0
@@ -413,6 +499,16 @@ func _roll_kind(brute_chance: float) -> String:
 		if roll <= 0.0:
 			return kind
 	return "barbfish"
+
+
+## The hunt's quarry: a leashed elite lairing in one of the carved clearings.
+## Spawned directly (not via _spawn_enemy_deferred) so the enemy cap can never
+## leave the quest unwinnable.
+func _spawn_beast(lair: Vector2) -> void:
+	if game_over:
+		return
+	var hp_scale := (1.0 + 0.35 * (Net.player_count() - 1)) * GameRules.depth_hp_scale(depth)
+	$EnemySpawner.spawn({"kind": "beast", "pos": terrain.find_open_near(lair), "hp_scale": hp_scale})
 
 
 ## The Maw guards the last of the salvage: spawns near a remaining crate.
@@ -465,7 +561,6 @@ func choose_descend() -> void:
 	awaiting_choice = false
 	depth += 1
 	oxygen = minf(oxygen + GameRules.DESCEND_O2_BONUS, _max_oxygen)
-	crates_left = GameRules.CRATE_COUNT
 	extraction_progress = 0.0
 	_bell = null
 	_maw_spawned = false
@@ -525,7 +620,8 @@ func _roll_offer(p: Player) -> Array:
 
 func _finish(win: bool) -> void:
 	_rpc_hud.rpc(oxygen, crates_left, team_level, team_xp, xp_needed, elapsed,
-			extraction_progress, depth, salvage_earned, awaiting_choice, decision_left)
+			extraction_progress, depth, salvage_earned, awaiting_choice, decision_left,
+			quest_kind, quest_progress, quest_done)
 	_rpc_game_over.rpc(win, salvage_earned if win else 0)
 	for e in enemies.get_children():
 		e.queue_free()
@@ -581,7 +677,8 @@ func _build_walls() -> void:
 
 @rpc("authority", "unreliable_ordered")
 func _rpc_hud(o: float, c: int, lvl: int, xp: int, need: int, t: float, ext: float,
-		d: int, salvage: int, awaiting: bool, decision: float) -> void:
+		d: int, salvage: int, awaiting: bool, decision: float,
+		qk: String, qp: float, qd: bool) -> void:
 	oxygen = o
 	crates_left = c
 	team_level = lvl
@@ -593,6 +690,9 @@ func _rpc_hud(o: float, c: int, lvl: int, xp: int, need: int, t: float, ext: flo
 	salvage_earned = salvage
 	awaiting_choice = awaiting
 	decision_left = decision
+	quest_kind = qk
+	quest_progress = qp
+	quest_done = qd
 
 
 @rpc("authority", "call_local", "reliable")
@@ -606,6 +706,8 @@ func _rpc_game_over(win: bool, banked: int) -> void:
 	victory = win
 	banked_salvage = banked
 	awaiting_choice = false
+	# Each dive is a day: every diver's calendar turns when the run ends.
+	Station.advance_day()
 	if win:
 		# Every diver banks the full team haul into their own station.
 		Station.bank_salvage(banked)

@@ -26,6 +26,7 @@ var bank := 0
 var levels := {}  # id -> int
 var unlocked_divers: Array = [Divers.DEFAULT]
 var diver := Divers.DEFAULT
+var day := 1  # each dive is a day; advances when a run ends (win or loss)
 
 var _save_path := SAVE_PATH
 
@@ -82,6 +83,12 @@ func select_diver(id: String) -> bool:
 	return true
 
 
+func advance_day() -> void:
+	day += 1
+	save_data()
+	changed.emit()
+
+
 func bank_salvage(amount: int) -> void:
 	if amount <= 0:
 		return
@@ -106,6 +113,7 @@ func load_data() -> void:
 	levels = {}
 	unlocked_divers = [Divers.DEFAULT]
 	diver = Divers.DEFAULT
+	day = 1
 	if not FileAccess.file_exists(_save_path):
 		return
 	var file := FileAccess.open(_save_path, FileAccess.READ)
@@ -115,6 +123,7 @@ func load_data() -> void:
 	if not parsed is Dictionary:
 		return
 	bank = maxi(0, int(parsed.get("bank", 0)))
+	day = maxi(1, int(parsed.get("day", 1)))
 	var raw: Variant = parsed.get("levels", {})
 	if raw is Dictionary:
 		for id in UPGRADES:
@@ -139,4 +148,5 @@ func save_data() -> void:
 		"levels": levels,
 		"divers": unlocked_divers,
 		"diver": diver,
+		"day": day,
 	}))

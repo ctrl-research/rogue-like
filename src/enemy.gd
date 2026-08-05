@@ -11,6 +11,7 @@ const TEXTURES := {
 	"jelly": preload("res://assets/sprites/jelly.png"),
 	"jelly_small": preload("res://assets/sprites/jelly.png"),
 	"maw": preload("res://assets/sprites/maw.png"),
+	"beast": preload("res://assets/sprites/lurker.png"),
 }
 
 ## kind -> stats and behavior flags. "ambush": sit camouflaged until a diver
@@ -25,6 +26,11 @@ const KINDS := {
 	# rather than chasing across the map — crates spawn >= 220px from the
 	# arena center, so it can never end up camping the dive bell.
 	"maw": {"speed": 18.0, "hp": 480.0, "damage": 30.0, "xp": 10, "scale": 1.25, "leash": 170.0},
+	# The hunt quest's quarry: a scarred alpha lurker lairing in a clearing.
+	# Leashed for the same bell-safety reason, and so the hunt means going to
+	# it — the sonar pings lead the way.
+	"beast": {"speed": 62.0, "hp": 300.0, "damage": 24.0, "xp": 8, "scale": 1.5,
+			"leash": 240.0, "tint": Color(1.0, 0.6, 0.5)},
 }
 
 const AMBUSH_RANGE := 110.0
@@ -58,6 +64,9 @@ func setup(new_kind: String, hp_scale: float) -> void:
 	scale = Vector2.ONE * float(spec.get("scale", 1.0))
 	_ambushing = bool(spec.get("ambush", false))
 	$Sprite.texture = TEXTURES[kind]
+	# Whole-node modulate, not Sprite.self_modulate — hit flashes tween
+	# self_modulate back to white and would wipe a tint stored there.
+	modulate = spec.get("tint", Color.WHITE)
 
 
 func _ready() -> void:
@@ -93,7 +102,7 @@ func _on_exiting() -> void:
 		return
 	Fx.poof(game, global_position, Color(0.75, 0.45, 0.6))
 	Sfx.play_at("kill", global_position, -8.0)
-	if kind == "maw":
+	if kind == "maw" or kind == "beast":
 		Sfx.play_at("explosion", global_position, -2.0)
 		Fx.shake_near(game, global_position, 420.0, 5.0)
 
