@@ -259,9 +259,12 @@ terrain are untouched by it.
   overhanging the edge. First slice of the faux-height pivot; shadows (PR #29),
   parallax and haze (PR #30) followed.
 - **M11 — this PR** — character customization (issue #37): a name and two
-  colours (suit, helmet screen) chosen on the title screen, persisted with the
-  station save, and visible on the crew standing around the sub — which is the
-  lobby preview. Recolouring is a palette swap keyed on four tones of the
+  colours (suit, helmet screen) picked from a full gradient picker, persisted
+  with the station save, and visible on the crew standing around the sub — which
+  is the lobby preview. The title screen splits into two columns (connecting on
+  the left, your diver on the right) rather than overlaying one on the other, and
+  the same editor is hosted at the sub's diver locker so anyone who walked past
+  it at boot can still change it mid-campaign. Recolouring is a palette swap keyed on four tones of the
   sprite's own palette rather than a whole-sprite tint, so the suit and the
   visor change independently and the air tank stays fixed as a common
   reference. A hand-drawn replacement sprite inherits all of this by using the

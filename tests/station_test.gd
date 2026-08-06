@@ -99,20 +99,36 @@ func _ready() -> void:
 	_check(Appearance.sanitize_name("x".repeat(99)).length() == Appearance.NAME_MAX,
 			"names are capped")
 	_check(Appearance.sanitize_name("") == "", "an empty name stays empty")
-	# Snapping is total: every input lands on a legible swatch. A picker would
-	# let a player choose near-black, which in a game played inside a small lamp
-	# radius means choosing to be invisible.
-	_check(Appearance.snap("#000000", Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
-			in Appearance.SUIT_SWATCHES, "black snaps into the palette")
-	_check(Appearance.snap("garbage", Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
-			in Appearance.SUIT_SWATCHES, "unparseable snaps into the palette")
-	_check(Appearance.snap(12345, Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
+	# Any colour the player likes, preserved exactly — the picker is a full
+	# gradient, not a fixed palette.
+	_check(Appearance.normalize_color("#3fa9d9", Appearance.DEFAULT_SUIT) == "#3fa9d9",
+			"an arbitrary colour is preserved")
+	_check(Appearance.normalize_color("3fa9d9", Appearance.DEFAULT_SUIT) == "#3fa9d9",
+			"a missing # is tolerated")
+	_check(Appearance.normalize_color("garbage", Appearance.DEFAULT_SUIT)
+			== Appearance.DEFAULT_SUIT, "unparseable falls back")
+	_check(Appearance.normalize_color(12345, Appearance.DEFAULT_SUIT)
 			== Appearance.DEFAULT_SUIT, "a non-string falls back")
-	_check(Appearance.snap("#d94f3d", Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
-			== "#d94f3d", "an exact swatch is preserved")
+	_check(Appearance.normalize_color("", Appearance.DEFAULT_SUIT)
+			== Appearance.DEFAULT_SUIT, "empty falls back")
+	# The one constraint, and it is functional: 2D lights multiply, so a black
+	# suit stays black under a lamp and the diver simply is not there. The floor
+	# is on the brightest channel, which is what survives a multiply — a
+	# luminance floor would have lightened pure blue into a pastel.
+	_check(Appearance.lift(Color.BLACK) == Color(Appearance.MIN_CHANNEL,
+			Appearance.MIN_CHANNEL, Appearance.MIN_CHANNEL), "black becomes a grey")
+	_check(maxf(Appearance.lift(Color(0.02, 0.0, 0.0)).r, 0.0) >= Appearance.MIN_CHANNEL - 0.001,
+			"near-black is lifted to the floor")
+	# Saturated colours keep their hue and saturation: only brightness moves.
+	var dark_red := Appearance.lift(Color(0.05, 0.0, 0.0))
+	_check(dark_red.g == 0.0 and dark_red.b == 0.0, "lifting preserves saturation")
+	_check(Appearance.lift(Color(0.0, 0.0, 1.0)) == Color(0.0, 0.0, 1.0),
+			"pure blue is left alone despite low luminance")
+	var kept := Color(0.85, 0.65, 0.13)
+	_check(Appearance.lift(kept).is_equal_approx(kept), "a legible colour is untouched")
 	var junk := Appearance.sanitize({"name": "\n\n", "suit": null, "screen": []})
-	_check(str(junk.suit) in Appearance.SUIT_SWATCHES
-			and str(junk.screen) in Appearance.SCREEN_SWATCHES,
+	_check(str(junk.suit) == Appearance.DEFAULT_SUIT
+			and str(junk.screen) == Appearance.DEFAULT_SCREEN,
 			"a hostile profile still yields a drawable diver")
 
 	Station.set_profile({"name": "nemo", "suit": "#3fa9d9", "screen": "#ffe89f"})
