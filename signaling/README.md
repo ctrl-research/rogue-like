@@ -38,11 +38,11 @@ production, then point the game at the broker via the
 
 Health check: plain HTTP `GET /health` returns `200 ok`.
 
-## A TURN relay is required for browser co-op
+## Peers behind one NAT need a TURN relay
 
 The hub only brokers the handshake. Whether the peers can then reach each other
-is a separate question, and for browsers the answer is often no — measured, not
-assumed:
+is a separate question, and for two browsers behind the SAME NAT the answer is no
+— measured, not assumed:
 
 ```
 peer 2: gathering=2 out=host:1,srflx:1 in=host:1,srflx:1  conn=1 (forever)
@@ -61,6 +61,14 @@ pair connected. Both candidate types were on offer and neither worked:
 
 Neither is fixable from the game: mDNS obfuscation is a browser privacy feature,
 hairpinning belongs to the router. A relay removes the need for a direct path.
+
+Scope this honestly. The failure above is the *same-NAT* case, which is also what
+every same-machine two-window test is — so local testing will keep failing no
+matter what the code does, and that is not a regression. Peers on **different**
+networks need no hairpinning and pair srflx-to-srflx, which succeeds for most peer
+pairs, so cross-network play may work with no relay at all. A relay is what covers
+the remaining tail: CGNAT, symmetric NAT, and networks that block UDP outright.
+Test with someone on another network before deciding how urgently you need one.
 
 Deploy [coturn](https://github.com/coturn/coturn) beside the hub, then add it to
 the `network/signaling/ice_servers` project setting alongside the STUN entry:
