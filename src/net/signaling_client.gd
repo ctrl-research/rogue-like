@@ -140,7 +140,9 @@ func _handle(raw: String) -> void:
 				rtc.remove_peer(int(msg.id))
 		"offer", "answer":
 			if rtc != null and rtc.has_peer(int(msg.id)):
-				var set_err := rtc.get_peer(int(msg.id)).connection.set_remote_description(
+				# Explicit int: get_peer() hands back a Dictionary, so reaching
+				# through .connection is a Variant call with no inferable type.
+				var set_err: int = rtc.get_peer(int(msg.id)).connection.set_remote_description(
 						str(msg.type), str(msg.sdp))
 				# The offering side never fires session_description_created for an
 				# incoming answer, so without this line there is no evidence the
@@ -153,7 +155,7 @@ func _handle(raw: String) -> void:
 		"candidate":
 			if rtc != null and rtc.has_peer(int(msg.id)):
 				var pid := int(msg.id)
-				var add_err := rtc.get_peer(pid).connection.add_ice_candidate(
+				var add_err: int = rtc.get_peer(pid).connection.add_ice_candidate(
 					str(msg.mid), int(msg.index), str(msg.name))
 				_cand_in[pid] = int(_cand_in.get(pid, 0)) + 1
 				if add_err != OK:
