@@ -3,6 +3,10 @@ class_name StationUi
 ## consoles (and anywhere else the crew spends banked salvage). Each builder
 ## appends rows to `parent`; callers rebuild on Station.changed.
 
+## Colour picker popup width. Narrow on purpose: the internal resolution is
+## 640x360, and a stock ColorPicker is sized for a desktop inspector.
+const PICKER_WIDTH := 124
+
 
 ## Appearance editor: preview, name, and a colour picker per recolourable region.
 ## Built here rather than in the title screen so the sub's diver locker can host
@@ -86,17 +90,26 @@ static func _add_color_row(parent: VBoxContainer, draft: Dictionary, repaint: Ca
 	button.color = Color.from_string(str(draft.get(key, "#ffffff")), Color.WHITE)
 	row.add_child(button)
 
-	# get_picker() only exists once the popup has been created, which happens on
-	# first press — so presets are seeded on the first popup rather than now.
-	var seeded := {"done": false}
-	button.pressed.connect(func() -> void:
-		if seeded.done:
-			return
-		seeded["done"] = true
-		var picker := button.get_picker()
+	# Configured eagerly rather than on first press. get_picker() instantiates the
+	# picker on demand, and a popup takes its size from whatever the picker
+	# already is — so trimming it inside the `pressed` handler would leave the
+	# FIRST open full-size and only shrink it afterwards.
+	var picker := button.get_picker()
+	if picker != null:
+		# A stock ColorPicker is built for a desktop inspector: an eyedropper
+		# strip, colour-mode buttons and a full slider stack. At 640x360 that is
+		# half the screen, and it opened over the diver preview it is meant to be
+		# previewing. Gradient plus hex plus presets is the whole job.
+		picker.custom_minimum_size = Vector2(PICKER_WIDTH, 0)
+		picker.picker_shape = ColorPicker.SHAPE_HSV_RECTANGLE
+		picker.sampler_visible = false
+		picker.color_modes_visible = false
+		picker.sliders_visible = false
+		picker.hex_visible = true  # keeps every HTML colour reachable by typing
+		picker.can_add_swatches = false  # the presets below are the starting set
 		picker.presets_visible = true
 		for hex in presets:
-			picker.add_preset(Color.from_string(hex, Color.WHITE)))
+			picker.add_preset(Color.from_string(hex, Color.WHITE))
 
 	button.color_changed.connect(func(c: Color) -> void:
 		draft[key] = "#" + c.to_html(false)

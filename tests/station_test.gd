@@ -156,6 +156,29 @@ func _ready() -> void:
 	_check(str(Appearance.sanitize_seat("not even a dict").diver) == Divers.DEFAULT,
 			"a non-dict seat is survivable")
 
+	# Build the appearance editor for real. Nothing else in CI touches it: the
+	# title screen is bypassed by the e2e (it calls Net.host_online directly) and
+	# the locker panel only opens on a keypress — so a renamed ColorPicker
+	# property or a bad shader path here would reach players untested.
+	var probe := VBoxContainer.new()
+	add_child(probe)
+	StationUi.build_appearance(probe, 32)
+	_check(probe.get_child_count() >= 4, "appearance editor builds its rows")
+	var found_picker := _find_picker(probe)
+	_check(found_picker != null, "the editor contains a colour picker button")
+	if found_picker != null:
+		var picker := found_picker.get_picker()
+		_check(picker != null, "the picker is instantiated eagerly, not on first press")
+		if picker != null:
+			# The point of the trimming: it must not open at desktop-inspector
+			# size over a 640x360 screen.
+			_check(not picker.sliders_visible and not picker.sampler_visible,
+					"the picker is trimmed down")
+			_check(picker.hex_visible, "hex stays reachable so any colour can be typed")
+			_check(picker.custom_minimum_size.x <= StationUi.PICKER_WIDTH,
+					"the picker is narrow")
+	probe.queue_free()
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()
@@ -198,6 +221,18 @@ func _ready() -> void:
 	else:
 		print("STATION_TEST_FAIL: %s" % ", ".join(_failures))
 		get_tree().quit(1)
+
+
+## Depth-first search for the first ColorPickerButton, so the probe above doesn't
+## have to know how build_appearance nests its rows.
+func _find_picker(node: Node) -> ColorPickerButton:
+	for child in node.get_children():
+		if child is ColorPickerButton:
+			return child
+		var deeper := _find_picker(child)
+		if deeper != null:
+			return deeper
+	return null
 
 
 func _check(cond: bool, label: String) -> void:
