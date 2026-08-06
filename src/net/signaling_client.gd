@@ -24,6 +24,15 @@ var _active := false
 var _join_sent := false
 var _room_to_join := ""
 var _pending_peers: Array[int] = []  # peer_connects that arrived before "id"
+# Handshake telemetry. We used to log only the descriptions we SENT, which is
+# why a browser report could show a completed offer/answer exchange and still
+# leave the interesting part — did the answer arrive, did candidates flow, what
+# state did the connection reach — entirely invisible.
+var _cand_out := {}  # peer id -> candidates we sent
+var _cand_in := {}  # peer id -> candidates we received
+var _peer_snap := {}  # peer id -> last reported state, so we log transitions
+var _status_report := 0.0
+var _last_status := -1
 
 
 static func webrtc_available() -> bool:
@@ -84,7 +93,8 @@ func unseal() -> void:
 	_send({"type": "unseal"})
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_report_handshake(delta)
 	if not _active:
 		return
 	_ws.poll()
@@ -130,11 +140,27 @@ func _handle(raw: String) -> void:
 				rtc.remove_peer(int(msg.id))
 		"offer", "answer":
 			if rtc != null and rtc.has_peer(int(msg.id)):
-				rtc.get_peer(int(msg.id)).connection.set_remote_description(str(msg.type), str(msg.sdp))
+				var set_err := rtc.get_peer(int(msg.id)).connection.set_remote_description(
+						str(msg.type), str(msg.sdp))
+				# The offering side never fires session_description_created for an
+				# incoming answer, so without this line there is no evidence the
+				# answer ever landed.
+				print("[signaling] remote %s from peer %d: set=%s" % [
+						str(msg.type), int(msg.id), error_string(set_err)])
+			else:
+				print("[signaling] dropped %s from peer %s (no such peer)" % [
+						str(msg.type), str(msg.id)])
 		"candidate":
 			if rtc != null and rtc.has_peer(int(msg.id)):
-				rtc.get_peer(int(msg.id)).connection.add_ice_candidate(
+				var pid := int(msg.id)
+				var add_err := rtc.get_peer(pid).connection.add_ice_candidate(
 					str(msg.mid), int(msg.index), str(msg.name))
+				_cand_in[pid] = int(_cand_in.get(pid, 0)) + 1
+				if add_err != OK:
+					print("[signaling] candidate %d from peer %d rejected: %s" % [
+							_cand_in[pid], pid, error_string(add_err)])
+			else:
+				print("[signaling] dropped candidate from peer %s (no such peer)" % str(msg.id))
 		"seal":
 			pass  # room locked; nothing to do client-side
 		"error":
@@ -167,7 +193,48 @@ func _on_description(type: String, sdp: String, id: int, pc: WebRTCPeerConnectio
 
 
 func _on_candidate(mid: String, index: int, sdp_name: String, id: int) -> void:
+	_cand_out[id] = int(_cand_out.get(id, 0)) + 1
 	_send({"type": "candidate", "id": id, "mid": mid, "index": index, "name": sdp_name})
+
+
+## Log the handshake's actual progress: per-peer connection state and how many
+## ICE candidates crossed in each direction. Reports on change, plus a heartbeat
+## while the mesh is still not connected — a stall then says which stage it
+## reached instead of going quiet.
+func _report_handshake(delta: float) -> void:
+	if rtc == null:
+		return
+	var status := rtc.get_connection_status()
+	if status != _last_status:
+		_last_status = status
+		print("[signaling] mesh status=%d (0=disconnected 1=connecting 2=connected)" % status)
+	_status_report -= delta
+	var heartbeat := false
+	if status != MultiplayerPeer.CONNECTION_CONNECTED and _status_report <= 0.0:
+		_status_report = 3.0
+		heartbeat = true
+	for key in rtc.get_peers():
+		var id := int(key)
+		var info: Dictionary = rtc.get_peer(id)
+		var pc: WebRTCPeerConnection = info.get("connection")
+		var conn := -1
+		var gather := -1
+		var sig := -1
+		if pc != null:
+			conn = pc.get_connection_state()
+			# Guarded: these two are the least portable part of the API, and this
+			# code ships to browsers where a missing method would be fatal.
+			if pc.has_method("get_gathering_state"):
+				gather = pc.get_gathering_state()
+			if pc.has_method("get_signaling_state"):
+				sig = pc.get_signaling_state()
+		var snap := "%s/%d/%d/%d/%d/%d" % [info.get("connected", false), conn, gather, sig,
+				int(_cand_out.get(id, 0)), int(_cand_in.get(id, 0))]
+		if heartbeat or _peer_snap.get(id, "") != snap:
+			_peer_snap[id] = snap
+			print("[signaling] peer %d: connected=%s conn=%d gathering=%d signaling=%d candidates out=%d in=%d" % [
+					id, info.get("connected", false), conn, gather, sig,
+					int(_cand_out.get(id, 0)), int(_cand_in.get(id, 0))])
 
 
 func _friendly_error(reason: String) -> String:
