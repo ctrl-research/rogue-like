@@ -26,10 +26,11 @@ const STATION_RANGE := 30.0
 const WALL_LAYER := 4  # same hull layer the game scene uses
 
 const OPEN_WATER := Color("070f16")  # the sea the boat is sitting in
-## How long to wait for the peer connection before saying something useful. A
-## browser throttles hidden tabs almost to a stop, so a host sitting in a
-## background tab never processes the signalling that would answer the joiner —
-## the commonest way this fails, and invisible from the joiner's side.
+## How long to wait for the peer connection before saying something useful.
+## Signalling completing while the connection never does means ICE found no
+## route between the two peers — see the [signaling] log for the candidate types
+## it tried. That is a network problem, not something the crew can act on in the
+## sub, so the message says what happened rather than guessing at a cause.
 const LINK_STALL_SECONDS := 12.0
 
 var _roster := {}  # pid -> diver_id (host-authoritative, mirrored to all)
@@ -463,5 +464,5 @@ func _refresh_wall_text() -> void:
 		if _link_wait < LINK_STALL_SECONDS:
 			crew += "   LINKING... %ds" % int(_link_wait)
 		else:
-			crew += "   LINK STALLED — both windows must stay visible"
+			crew += "   NO ROUTE TO CREW — see console"
 	_crew_label.text = crew

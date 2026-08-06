@@ -281,4 +281,16 @@ terrain are untouched by it.
 
 - Deploy signaling broker to the team k8s cluster (`wss://`), set
   `ALLOWED_ORIGINS` and `network/signaling/url`.
-- TURN server if strict-NAT players report connection failures.
+- **TURN server — now confirmed necessary, not speculative.** Two browser peers
+  complete signalling (offer, answer and ICE candidates all cross, gathering
+  reaches complete) and then never connect: `conn=1` forever, no pair usable.
+  STUN alone only tells a peer its public address; when both peers sit behind
+  the same NAT and the browser hides host candidates behind mDNS, there is no
+  route left to try unless the router hairpins, and most don't. A relay is the
+  fix. Deploy coturn on the homelab and add it to
+  `network/signaling/ice_servers` alongside the STUN entry:
+  `[{"urls":["stun:..."]},{"urls":["turn:turn.j6n.dev:3478"],"username":"...","credential":"..."}]`
+  — the client already reads TURN entries from that setting, so this is
+  deployment and configuration rather than a code change. Note the credentials
+  are inherently visible to any browser client, so rate-limit the relay or issue
+  short-lived credentials.
