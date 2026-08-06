@@ -10,12 +10,6 @@ extends CharacterBody2D
 
 signal upgrade_offered(options: Array)
 
-const TINTS: Array[Color] = [
-	Color.WHITE,
-	Color(0.65, 0.9, 1.0),
-	Color(0.7, 1.0, 0.7),
-	Color(1.0, 0.75, 0.85),
-]
 const BASE_SPEED := 90.0
 const BASE_MAX_HP := 100.0
 const BASE_PICKUP_RADIUS := 28.0
@@ -71,7 +65,12 @@ func _ready() -> void:
 	add_to_group("players")
 	$Camera.enabled = is_local()
 	_add_bubbles()
-	$Sprite.self_modulate = TINTS[player_index % TINTS.size()]
+	# Player colours come from each peer's own profile, recoloured per palette
+	# key so the suit and helmet screen change independently. The previous
+	# whole-sprite self_modulate tinted the visor and air tank along with the
+	# suit, which is why every diver used to read as the same figure in a
+	# different wash.
+	Appearance.apply($Sprite, meta.get("profile", {}))
 	$NameLabel.text = display_name()
 	$Camera.limit_left = 0
 	$Camera.limit_top = 0
@@ -152,7 +151,7 @@ func _physics_process(delta: float) -> void:
 
 
 func display_name() -> String:
-	return "P%d" % (player_index + 1)
+	return Appearance.label_for(meta.get("profile", {}), player_index)
 
 
 ## Server only.
@@ -582,7 +581,7 @@ func _set_downed(value: bool) -> void:
 	if not is_node_ready():
 		return
 	$Sprite.rotation = -PI / 2 if value else 0.0
-	$Sprite.modulate = Color(1.0, 0.55, 0.55, 0.9) if value else Color.WHITE
+	Appearance.set_downed($Sprite, value)
 	if value and not was:
 		if is_local():
 			Sfx.play("downed", -4.0, 0.0)

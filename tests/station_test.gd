@@ -90,6 +90,56 @@ func _ready() -> void:
 	_check(GameRules.lamp_radius(0, 0, 99) == GameRules.LAMP_MIN_RADIUS,
 			"reach floors instead of vanishing")
 
+	# Appearance: the cosmetic profile is sanitized on every path in, rides the
+	# meta handshake, and survives save/load. Sanitizing matters more here than
+	# for anything else in Station because a profile is the only field that
+	# arrives from another peer — see Appearance.sanitize.
+	_check(Appearance.sanitize_name("  jon  ny ") == "JON NY", "names trim, collapse, upcase")
+	_check(Appearance.sanitize_name("a\nb\tc") == "ABC", "control characters stripped")
+	_check(Appearance.sanitize_name("x".repeat(99)).length() == Appearance.NAME_MAX,
+			"names are capped")
+	_check(Appearance.sanitize_name("") == "", "an empty name stays empty")
+	# Snapping is total: every input lands on a legible swatch. A picker would
+	# let a player choose near-black, which in a game played inside a small lamp
+	# radius means choosing to be invisible.
+	_check(Appearance.snap("#000000", Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
+			in Appearance.SUIT_SWATCHES, "black snaps into the palette")
+	_check(Appearance.snap("garbage", Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
+			in Appearance.SUIT_SWATCHES, "unparseable snaps into the palette")
+	_check(Appearance.snap(12345, Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
+			== Appearance.DEFAULT_SUIT, "a non-string falls back")
+	_check(Appearance.snap("#d94f3d", Appearance.SUIT_SWATCHES, Appearance.DEFAULT_SUIT)
+			== "#d94f3d", "an exact swatch is preserved")
+	var junk := Appearance.sanitize({"name": "\n\n", "suit": null, "screen": []})
+	_check(str(junk.suit) in Appearance.SUIT_SWATCHES
+			and str(junk.screen) in Appearance.SCREEN_SWATCHES,
+			"a hostile profile still yields a drawable diver")
+
+	Station.set_profile({"name": "nemo", "suit": "#3fa9d9", "screen": "#ffe89f"})
+	_check(str(Station.profile.name) == "NEMO", "profile name stored sanitized")
+	var meta_profile: Dictionary = Station.meta_dict()["profile"]
+	_check(str(meta_profile.suit) == "#3fa9d9", "meta carries the profile")
+	# Mutating what meta handed out must not reach back into Station: the same
+	# dict is about to be handed to every peer.
+	meta_profile["suit"] = "#000000"
+	_check(str(Station.profile.suit) == "#3fa9d9", "meta_dict hands out a copy")
+	Station.profile = Appearance.default_profile()
+	Station.load_data()
+	_check(str(Station.profile.name) == "NEMO" and str(Station.profile.screen) == "#ffe89f",
+			"profile survives save/load")
+	# Seats are what the sub roster stores; the key exists so roster change
+	# detection never depends on Dictionary equality semantics.
+	var seat_a := Appearance.make_seat("lancer", {"name": "a", "suit": "#3fa9d9"})
+	_check(Appearance.seat_key(seat_a) == Appearance.seat_key(seat_a.duplicate(true)),
+			"equal seats key equal")
+	_check(Appearance.seat_key(seat_a)
+			!= Appearance.seat_key(Appearance.make_seat("lancer", {"name": "b"})),
+			"a changed name changes the key")
+	_check(str(Appearance.sanitize_seat({"diver": "not_a_diver"}).diver) == Divers.DEFAULT,
+			"an unknown diver class falls back")
+	_check(str(Appearance.sanitize_seat("not even a dict").diver) == Divers.DEFAULT,
+			"a non-dict seat is survivable")
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()

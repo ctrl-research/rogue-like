@@ -219,18 +219,24 @@ func player_count() -> int:
 ## always exists. Peers no longer aboard simply have nothing connected to
 ## these signals, so the message is dropped harmlessly.
 
-signal sub_aboard_received(pid: int, diver_id: String)
+signal sub_aboard_received(pid: int, seat: Dictionary)
 signal sub_roster_received(roster: Dictionary)
 signal sub_pos_received(pid: int, pos: Vector2)
 
 
-## Client -> host: "I'm aboard, diving as this class."
+## Client -> host: "I'm aboard as this class, looking like this."
+##
+## The payload is a seat dict {diver, profile} rather than the bare diver id it
+## used to be, so the lobby can show names and colours. Appearance is cosmetic
+## and unvalidated by design — but it is sanitized on arrival (see Sub), because
+## "cosmetic" still means "rendered", and an unbounded string from a peer would
+## be drawn on everyone's screen.
 @rpc("any_peer", "reliable")
-func sub_aboard(diver_id: String) -> void:
-	sub_aboard_received.emit(multiplayer.get_remote_sender_id(), diver_id)
+func sub_aboard(seat: Dictionary) -> void:
+	sub_aboard_received.emit(multiplayer.get_remote_sender_id(), seat)
 
 
-## Host -> everyone: the authoritative pid -> diver_id roster.
+## Host -> everyone: the authoritative pid -> seat roster.
 @rpc("authority", "call_local", "reliable")
 func sub_roster(roster: Dictionary) -> void:
 	sub_roster_received.emit(roster)

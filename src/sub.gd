@@ -8,7 +8,7 @@ extends Node2D
 ## joiners can arrive before their scene loads, and the host leaves the sub
 ## a few frames before the crew does, so anything addressed to a node inside
 ## this scene can land on a peer that hasn't built it yet or has already
-## moved on. Instead the host owns a pid -> diver_id roster broadcast over
+## moved on. Instead the host owns a pid -> seat roster broadcast over
 ## the Net lobby channel (see net.gd), each peer reconciles
 ## deterministically-named local nodes (Divers/D<pid>), and each diver's
 ## owner broadcasts its own position. Clients announce themselves (with
@@ -33,7 +33,7 @@ const OPEN_WATER := Color("070f16")  # the sea the boat is sitting in
 ## sub, so the message says what happened rather than guessing at a cause.
 const LINK_STALL_SECONDS := 12.0
 
-var _roster := {}  # pid -> diver_id (host-authoritative, mirrored to all)
+var _roster := {}  # pid -> seat {diver, profile} (host-authoritative, mirrored)
 var _entered_online := false  # session died while aboard -> back to the menu
 ## Whether the HOST has us in its roster. Deliberately not "are we in _roster":
 ## we put ourselves in there so we can see our own diver, and conflating the two
@@ -68,13 +68,13 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		Net.sub_aboard_received.connect(_on_aboard)
 		multiplayer.peer_disconnected.connect(_on_peer_left)
-		_roster[1] = Station.diver
+		_roster[1] = _my_seat()
 		_broadcast_roster()
 	else:
 		# Draw ourselves immediately rather than waiting to be acknowledged; the
 		# host's roster reconciles us into a seat when it lands.
 		_keep_self_aboard()
-		_spawn_diver(multiplayer.get_unique_id(), Station.diver, 0)
+		_spawn_diver(multiplayer.get_unique_id(), _my_seat(), 0)
 	_refresh_wall_text()
 
 
@@ -93,7 +93,7 @@ func _process(delta: float) -> void:
 			_announce_cd -= delta
 			if _announce_cd <= 0.0:
 				_announce_cd = 0.5
-				Net.sub_aboard.rpc_id(1, Station.diver)
+				Net.sub_aboard.rpc_id(1, _my_seat())
 		else:
 			_note_link_wait(delta)
 	_update_prompt()
@@ -119,10 +119,13 @@ func _unhandled_input(event: InputEvent) -> void:
 # --- Roster ------------------------------------------------------------------
 
 
-## Host: a crew member announced themselves (or changed class at the locker).
-func _on_aboard(pid: int, diver_id: String) -> void:
-	if _roster.get(pid, "") != diver_id:
-		_roster[pid] = diver_id
+## Host: a crew member announced themselves (or changed class/appearance).
+## Sanitized here, at the trust boundary, so nothing downstream has to wonder
+## whether a seat came from us or off the wire.
+func _on_aboard(pid: int, seat: Dictionary) -> void:
+	var clean := Appearance.sanitize_seat(seat)
+	if Appearance.seat_key(_roster.get(pid)) != Appearance.seat_key(clean):
+		_roster[pid] = clean
 		_broadcast_roster()
 
 
@@ -148,17 +151,20 @@ func _on_roster(roster: Dictionary) -> void:
 		var pid := int(str(child.name).trim_prefix("D"))
 		if not _roster.has(pid):
 			child.queue_free()
-	var seat := 0
+	# "slot" is the position on the deck; "seat" is the roster entry. They were
+	# both called seat before appearance moved into the roster, which made the
+	# spawn call read as though it passed the entry twice.
+	var slot := 0
 	for pid in _roster:
-		seat += 1
+		slot += 1
 		var node_name := "D%d" % pid
 		var existing: Node = divers.get_node_or_null(node_name)
 		if existing != null and not existing.is_queued_for_deletion():
-			if existing.diver_id != _roster[pid]:
-				existing.diver_id = _roster[pid]
-				existing.refresh_label()
+			if Appearance.seat_key(existing.seat) != Appearance.seat_key(_roster[pid]):
+				existing.seat = Appearance.sanitize_seat(_roster[pid])
+				existing.refresh_look()
 			continue
-		_spawn_diver(pid, str(_roster[pid]), seat)
+		_spawn_diver(pid, _roster[pid], slot)
 	_refresh_wall_text()
 
 
@@ -171,19 +177,24 @@ func _note_link_wait(delta: float) -> void:
 		_refresh_wall_text()
 
 
+## Our own seat, as announced to the host and drawn locally.
+func _my_seat() -> Dictionary:
+	return Appearance.make_seat(Station.diver, Station.profile)
+
+
 func _keep_self_aboard() -> void:
 	var mine := multiplayer.get_unique_id()
 	if not _roster.has(mine):
-		_roster[mine] = Station.diver
+		_roster[mine] = _my_seat()
 
 
-func _spawn_diver(pid: int, diver_id: String, seat: int) -> void:
+func _spawn_diver(pid: int, seat: Variant, slot: int) -> void:
 	var d: CharacterBody2D = DIVER_SCENE.instantiate()
 	d.name = "D%d" % pid
 	d.peer_id = pid
-	d.diver_id = diver_id
+	d.seat = Appearance.sanitize_seat(seat)
 	# Spaced along the deck's lower half, clear of the stations up top.
-	d.position = INTERIOR.position + Vector2(34 + 40 * seat, 76)
+	d.position = INTERIOR.position + Vector2(34 + 40 * slot, 76)
 	Fx.attach_shadow(d)
 	divers.add_child(d)
 
@@ -201,11 +212,11 @@ func _on_peer_left(pid: int) -> void:
 ## Diver class changed at the locker: tell the crew so name tags update.
 func _on_station_changed() -> void:
 	if multiplayer.is_server():
-		if _roster.get(1, "") != Station.diver:
-			_roster[1] = Station.diver
+		if Appearance.seat_key(_roster.get(1)) != Appearance.seat_key(_my_seat()):
+			_roster[1] = _my_seat()
 			_broadcast_roster()
 	else:
-		Net.sub_aboard.rpc_id(1, Station.diver)
+		Net.sub_aboard.rpc_id(1, _my_seat())
 	if _panel.visible:
 		_open_panel(_panel_kind)  # rebuild with fresh prices/levels
 	_refresh_wall_text()

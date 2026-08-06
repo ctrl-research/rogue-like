@@ -18,6 +18,14 @@ var _summary: Label
 var _address: LineEdit
 var _code_edit: LineEdit
 var _patches: Array[ColorRect] = []
+## Customization is a separate panel rather than another section on the title
+## screen: at 640x360 the menu column is already full, and appearance is a
+## set-once-and-forget thing that shouldn't cost vertical space every launch.
+var _customize_root: Control
+var _customize_box: VBoxContainer
+var _preview: TextureRect
+var _name_edit: LineEdit
+var _draft := {}  # edited profile, committed to Station on BACK
 
 
 func _ready() -> void:
@@ -84,6 +92,11 @@ func _build() -> void:
 	solo.pressed.connect(func() -> void: Net.start_solo())
 	_menu_box.add_child(solo)
 
+	var customize := Button.new()
+	customize.text = "CUSTOMIZE DIVER"
+	customize.pressed.connect(_open_customize)
+	_menu_box.add_child(customize)
+
 	var webrtc_ok := Net.webrtc_available()
 
 	var host_online := Button.new()
@@ -135,6 +148,7 @@ func _build() -> void:
 
 	box.add_child(HSeparator.new())
 	_build_brightness(box)
+	_build_customize()
 
 	_status = Label.new()
 	_status.add_theme_font_size_override("font_size", 9)
@@ -191,6 +205,138 @@ func _build_brightness(box: VBoxContainer) -> void:
 	box.add_child(slider)
 
 
+## The customization screen: a full-rect overlay rather than a section inline in
+## the menu column, which is already full at this resolution. Built once and
+## toggled, so the draft profile survives opening and closing it.
+func _build_customize() -> void:
+	_customize_root = CenterContainer.new()
+	_customize_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_customize_root.visible = false
+	add_child(_customize_root)
+
+	var frame := PanelContainer.new()
+	_customize_root.add_child(frame)
+
+	_customize_box = VBoxContainer.new()
+	_customize_box.add_theme_constant_override("separation", 6)
+	_customize_box.custom_minimum_size = Vector2(300, 0)
+	frame.add_child(_customize_box)
+
+	var header := Label.new()
+	header.text = "CUSTOMIZE DIVER"
+	header.add_theme_font_size_override("font_size", 14)
+	header.modulate = Color(0.62, 0.9, 1.0)
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_customize_box.add_child(header)
+
+	# The preview runs the same shader the real diver does, so what's shown here
+	# is not an approximation of the result — it is the result.
+	var preview_row := CenterContainer.new()
+	_customize_box.add_child(preview_row)
+	_preview = TextureRect.new()
+	_preview.texture = load(Appearance.SPRITE_PATH)
+	_preview.custom_minimum_size = Vector2(64, 64)
+	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_preview.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	preview_row.add_child(_preview)
+
+	_name_edit = LineEdit.new()
+	_name_edit.placeholder_text = "name (optional)"
+	_name_edit.max_length = Appearance.NAME_MAX
+	_name_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_name_edit.text_changed.connect(func(text: String) -> void:
+		_draft["name"] = text
+		_refresh_customize())
+	_customize_box.add_child(_name_edit)
+
+	var name_note := Label.new()
+	name_note.name = "NameNote"
+	name_note.add_theme_font_size_override("font_size", 8)
+	name_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_note.modulate = Color(0.5, 0.62, 0.72)
+	_customize_box.add_child(name_note)
+
+	_add_swatch_section("SUIT", Appearance.SUIT_SWATCHES, "suit")
+	_add_swatch_section("HELMET SCREEN", Appearance.SCREEN_SWATCHES, "screen")
+
+	var back := Button.new()
+	back.text = "BACK"
+	back.pressed.connect(func() -> void:
+		Station.set_profile(_draft)
+		_customize_root.visible = false)
+	_customize_box.add_child(back)
+
+
+func _add_swatch_section(title: String, swatches: Array[String], key: String) -> void:
+	var label := Label.new()
+	label.text = title
+	label.add_theme_font_size_override("font_size", 8)
+	label.modulate = Color(0.62, 0.9, 1.0)
+	_customize_box.add_child(label)
+
+	var row := HBoxContainer.new()
+	row.name = "Row_" + key
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 3)
+	_customize_box.add_child(row)
+	for hex in swatches:
+		var swatch := Button.new()
+		swatch.custom_minimum_size = Vector2(24, 18)
+		swatch.tooltip_text = hex
+		# The hex is stored as metadata rather than read back off tooltip_text:
+		# tooltips are display, and coupling the lookup to a UI string would
+		# break silently the first time the label changes.
+		swatch.set_meta("hex", hex)
+		swatch.pressed.connect(func() -> void:
+			_draft[key] = hex
+			_refresh_customize())
+		row.add_child(swatch)
+
+
+func _open_customize() -> void:
+	_draft = Station.profile.duplicate()
+	_name_edit.text = str(_draft.get("name", ""))
+	_refresh_customize()
+	_customize_root.visible = true
+
+
+## Repaint preview, swatch selection and the name echo from the draft. Cheap
+## enough at eighteen buttons to just rebuild the styling every change rather
+## than track which swatch was previously selected.
+func _refresh_customize() -> void:
+	var clean := Appearance.sanitize(_draft)
+	_preview.material = Appearance.make_material(str(clean.suit), str(clean.screen))
+
+	# Names are stored upper-cased and trimmed. Echo the stored form instead of
+	# rewriting the LineEdit mid-typing, which would fight the caret.
+	var note := _customize_box.get_node_or_null("NameNote") as Label
+	if note != null:
+		note.text = "SHOWN AS: %s" % (str(clean.name) if not str(clean.name).is_empty()
+				else "your diver class")
+
+	var keys: Array[String] = ["suit", "screen"]
+	for key in keys:
+		var row := _customize_box.get_node_or_null("Row_" + key) as HBoxContainer
+		if row == null:
+			continue
+		for swatch in row.get_children():
+			var button := swatch as Button
+			var hex := str(button.get_meta("hex", ""))
+			var box := StyleBoxFlat.new()
+			box.bg_color = Color.from_string(hex, Color.WHITE)
+			if hex.to_lower() == str(clean.get(key, "")).to_lower():
+				box.border_width_bottom = 2
+				box.border_width_top = 2
+				box.border_width_left = 2
+				box.border_width_right = 2
+				box.border_color = Color.WHITE
+			button.add_theme_stylebox_override("normal", box)
+			button.add_theme_stylebox_override("hover", box)
+			button.add_theme_stylebox_override("pressed", box)
+			button.add_theme_stylebox_override("focus", box)
+
+
 func _refresh_patches() -> void:
 	var base := Settings.AMBIENT_SURFACE
 	for i in _patches.size():
@@ -202,8 +348,12 @@ func _refresh_patches() -> void:
 
 
 func _refresh_summary() -> void:
+	var who: String = Divers.DIVERS[Station.diver].title
+	var chosen := Appearance.sanitize_name(str(Station.profile.get("name", "")))
+	if not chosen.is_empty():
+		who = "%s the %s" % [chosen, who]
 	_summary.text = "DAY %d  —  BANKED SALVAGE: %d  —  DIVING AS %s" % [
-		Station.day, Station.bank, Divers.DIVERS[Station.diver].title]
+		Station.day, Station.bank, who]
 
 
 ## On web, a shared invite URL like .../#room=ABCDE joins that room directly.
