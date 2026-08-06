@@ -183,9 +183,12 @@ func _my_seat() -> Dictionary:
 
 
 func _keep_self_aboard() -> void:
-	var mine := multiplayer.get_unique_id()
-	if not _roster.has(mine):
-		_roster[mine] = _my_seat()
+	# Overwrite rather than fill-if-missing: we are the authority on our own
+	# appearance, so editing it at the locker shows up on our own diver at once
+	# instead of waiting for the host's roster to make the round trip. The host
+	# stays authoritative for everyone else, and _acknowledged is read before
+	# this runs (see _on_roster) so this cannot fake an acknowledgement.
+	_roster[multiplayer.get_unique_id()] = _my_seat()
 
 
 func _spawn_diver(pid: int, seat: Variant, slot: int) -> void:
@@ -278,6 +281,12 @@ func _open_panel(kind: String) -> void:
 		"locker":
 			title.text = "DIVER LOCKER — BANK %d" % Station.bank
 			StationUi.build_divers(box)
+			# Appearance lives at the locker rather than at a station of its own:
+			# it is where the suit hangs, the deck is only 204px wide, and this
+			# is the second chance for anyone who walked past the title screen.
+			# Changes broadcast to the crew through _on_station_changed below.
+			StationUi.header(box, "APPEARANCE")
+			StationUi.build_appearance(box, 32)
 		"stash":
 			title.text = "SALVAGE STASH"
 			for line in [

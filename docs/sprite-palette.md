@@ -55,6 +55,20 @@ convention by design.
 also `#d9a521` they will recolour with the suit, because the shader can only see
 colour — it has no idea what a boot is.
 
+## Player colour is unrestricted, with one floor
+
+The picker is a full gradient with a hex field, so any colour is reachable; the
+curated lists in `Appearance` are seeded as picker *presets*, not limits.
+
+The single exception is `MIN_CHANNEL`. 2D lights **multiply**, so a pure black
+suit stays black under a lamp no matter how much light reaches it — it reads as
+no diver rather than as a dark one. Colours below the floor are scaled up until
+their brightest channel reaches it, which moves brightness only and leaves hue
+and saturation exactly as picked. The floor is measured on the brightest channel
+rather than on luminance on purpose: luminance weights blue at 0.07, so a
+luminance floor would have declared `#0000ff` too dark and lightened it into a
+pastel, when in fact it multiplies light perfectly well.
+
 ## Why not a mask texture?
 
 A second texture marking which pixels are recolourable would free the art from
