@@ -29,6 +29,10 @@ const OPEN_WATER := Color("070f16")  # the sea the boat is sitting in
 
 var _roster := {}  # pid -> diver_id (host-authoritative, mirrored to all)
 var _entered_online := false  # session died while aboard -> back to the menu
+## Whether the HOST has us in its roster. Deliberately not "are we in _roster":
+## we put ourselves in there so we can see our own diver, and conflating the two
+## made the announce loop believe it had already been acknowledged and go quiet.
+var _acknowledged := false
 var _announce_cd := 0.0
 var _stations: Array[Dictionary] = []
 var _prompt: Label
@@ -59,9 +63,10 @@ func _ready() -> void:
 		_roster[1] = Station.diver
 		_broadcast_roster()
 	else:
-		# Clients draw themselves immediately rather than waiting to be
-		# acknowledged; the roster reconciles them into their seat when it lands.
-		_on_roster({})
+		# Draw ourselves immediately rather than waiting to be acknowledged; the
+		# host's roster reconciles us into a seat when it lands.
+		_keep_self_aboard()
+		_spawn_diver(multiplayer.get_unique_id(), Station.diver, 0)
 	_refresh_wall_text()
 
 
@@ -73,7 +78,7 @@ func _process(delta: float) -> void:
 		return
 	# Clients: announce until the host has us aboard (retries cover joins
 	# that race the scene load or the WebRTC mesh coming up).
-	if not multiplayer.is_server() and not _roster.has(multiplayer.get_unique_id()):
+	if not multiplayer.is_server() and not _acknowledged:
 		_announce_cd -= delta
 		if _announce_cd <= 0.0:
 			_announce_cd = 0.5
@@ -115,6 +120,10 @@ func _on_remote_pos(pid: int, pos: Vector2) -> void:
 
 
 func _on_roster(roster: Dictionary) -> void:
+	# Acknowledged only if the HOST's roster names us — checked before we add
+	# ourselves below, or we would be answering our own announce.
+	if roster.has(multiplayer.get_unique_id()):
+		_acknowledged = true
 	_roster = roster
 	# You are always aboard your own sub. Until the host acknowledges the
 	# announce, its roster doesn't mention you — and culling against it would
