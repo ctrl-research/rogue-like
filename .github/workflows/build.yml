@@ -60,6 +60,12 @@ jobs:
       - name: Import project
         run: ./godot --headless --path . --import 2>&1 | tee -a build.log
 
+      # Cheap and independent of Godot: the sprite palette and the recolour
+      # keys live in two files, and drift between them fails silently (the
+      # shader matches nothing and every diver renders stock brass).
+      - name: Sprite palette drift check
+        run: python3 tests/palette_check.py
+
       - name: Station meta-progression unit test
         run: |
           set -euo pipefail
@@ -104,10 +110,10 @@ jobs:
           ./godot --headless --path . --export-release "Web" "build/web/index.html" 2>&1 | tee -a build.log
           test -f "build/web/index.html"
 
-      - name: Verify no GDScript parse / autoload errors
+      - name: Verify no GDScript parse / autoload / shader errors
         run: |
-          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|Failed to create an autoload|does not inherit from|Can't change this state" build.log; then
-            echo "::error::GDScript parse or autoload errors detected during export (see matches above)."
+          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|Failed to create an autoload|does not inherit from|Can't change this state|SHADER ERROR|Shader compilation failed" build.log; then
+            echo "::error::GDScript parse, autoload or shader errors detected during export (see matches above)."
             exit 1
           fi
           echo "No GDScript parse/autoload errors detected."

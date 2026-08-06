@@ -26,12 +26,18 @@ func _ready() -> void:
 	Net.entered_lobby.connect(_on_lobby)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	if role == "host":
+		# Assigned, not set_profile(): that persists, and both e2e instances share
+		# one user:// save file. Same reason `diver` is assigned directly below.
+		Station.profile = Appearance.sanitize(
+				{"name": "skipper", "suit": "#3fa9d9", "screen": "#ffe89f"})
 		Net.host_online()
 	else:
 		# Dive as a non-default kit so the host-side check proves diver kits
 		# replicate through the meta handshake (test-only forced unlock).
 		Station.unlocked_divers = [Divers.DEFAULT, "lancer"]
 		Station.diver = "lancer"
+		Station.profile = Appearance.sanitize(
+				{"name": "deckhand", "suit": "#d94f3d", "screen": "#b6ff9f"})
 		var code := OS.get_environment("E2E_ROOM")
 		print("[e2e-client] joining room %s" % code)
 		Net.join_online(code)
@@ -62,8 +68,17 @@ func _check_lobby(delta: float) -> void:
 		return
 	var crew := Net.player_count()
 	var aboard: int = cs.divers.get_child_count()
-	if crew >= 2 and aboard >= 2:
-		print("[e2e-%s] lobby ready: crew=%d aboard=%d" % [role, crew, aboard])
+	# Counting bodies is not enough: a roster that carried the seats but dropped
+	# the profiles would still put two divers on the deck. Assert this peer can
+	# actually read the OTHER peer's chosen name off its own screen.
+	var theirs := "DECKHAND" if role == "host" else "SKIPPER"
+	var saw_them := false
+	for child in cs.divers.get_children():
+		if str(child.get_node("Name").text).contains(theirs):
+			saw_them = true
+	if crew >= 2 and aboard >= 2 and saw_them:
+		print("[e2e-%s] lobby ready: crew=%d aboard=%d saw '%s'" % [
+				role, crew, aboard, theirs])
 		print("E2E_%s_LOBBY_OK" % role.to_upper())
 		_phase = "run1"
 		if role == "host":
@@ -73,8 +88,8 @@ func _check_lobby(delta: float) -> void:
 	if _lobby_report <= 0.0:
 		_lobby_report = 2.0
 		var peer := multiplayer.multiplayer_peer
-		print("[e2e-%s] lobby waiting: crew=%d aboard=%d peers=%s id=%d status=%d online=%s" % [
-			role, crew, aboard, str(multiplayer.get_peers()),
+		print("[e2e-%s] lobby waiting: crew=%d aboard=%d saw_crewmate=%s peers=%s id=%d status=%d online=%s" % [
+			role, crew, aboard, saw_them, str(multiplayer.get_peers()),
 			multiplayer.get_unique_id(),
 			peer.get_connection_status() if peer != null else -1, Net.is_online,
 		])

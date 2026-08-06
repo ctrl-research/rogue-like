@@ -37,6 +37,11 @@ var day := 1  # each dive is a day; advances when a run ends (win or loss)
 var cleared_lair := 0  # deepest boss lair this diver has cleared
 var winch := 0  # bought refit tiers; tier N lets dives start at depth 5N+1
 var dive_depth := 1  # chosen start depth for the next dive (host's applies)
+## Cosmetic identity — chosen name and the two diver colours (see Appearance).
+## Unlike everything above it buys nothing and affects no stat; it is kept here
+## only because this is already the thing that persists and already travels in
+## the meta handshake, so appearance needs no channel of its own.
+var profile := Appearance.default_profile()
 
 var _save_path := SAVE_PATH
 
@@ -164,7 +169,19 @@ func meta_dict() -> Dictionary:
 		"fins": level("fins"),
 		"lamp": level("lamp"),
 		"diver": diver,
+		# Appearance rides along rather than getting its own RPC: this dict
+		# already reaches every peer via _rpc_notify_ready -> _metas -> spawn
+		# data, which is exactly the fan-out a cosmetic profile needs.
+		"profile": profile.duplicate(),
 	}
+
+
+## Set and persist the cosmetic profile. Sanitized on the way in so a bad value
+## can never reach the save file, let alone the wire.
+func set_profile(raw: Dictionary) -> void:
+	profile = Appearance.sanitize(raw)
+	save_data()
+	changed.emit()
 
 
 func load_data() -> void:
@@ -176,6 +193,7 @@ func load_data() -> void:
 	cleared_lair = 0
 	winch = 0
 	dive_depth = 1
+	profile = Appearance.default_profile()
 	if not FileAccess.file_exists(_save_path):
 		return
 	var file := FileAccess.open(_save_path, FileAccess.READ)
@@ -203,6 +221,9 @@ func load_data() -> void:
 	var saved_diver := str(parsed.get("diver", Divers.DEFAULT))
 	if Divers.valid(saved_diver) and diver_unlocked(saved_diver):
 		diver = saved_diver
+	# Sanitized on load as well as on set: the save file is plain JSON in
+	# user:// and nothing stops a player from editing it by hand.
+	profile = Appearance.sanitize(parsed.get("profile", {}))
 
 
 func save_data() -> void:
@@ -219,4 +240,7 @@ func save_data() -> void:
 		"cleared_lair": cleared_lair,
 		"winch": winch,
 		"dive_depth": dive_depth,
+		# Hex strings, not Colors — JSON.stringify has no representation for a
+		# Color and would silently write something unparseable back.
+		"profile": profile,
 	}))

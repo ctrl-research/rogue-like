@@ -254,10 +254,19 @@ terrain are untouched by it.
   beast, the relay, the payload, the bell zone, the Warden) and at downed
   crewmates ahead of everything. An arrow hides once its target is on
   camera, which retires the HUD's text compass bearings.
-- **M10 — this PR** — 2.5D terrain spike: seamless rock mass with lit rims on
-  exposed sides, a darker wall front under every southern lip, and growth
-  overhanging the edge. First slice of the faux-height pivot; shadows,
-  parallax and haze follow once the look is judged in the browser.
+- **M10 — done (PR #26)** — 2.5D terrain spike: seamless rock mass with lit rims
+  on exposed sides, a darker wall front under every southern lip, and growth
+  overhanging the edge. First slice of the faux-height pivot; shadows (PR #29),
+  parallax and haze (PR #30) followed.
+- **M11 — this PR** — character customization (issue #37): a name and two
+  colours (suit, helmet screen) chosen on the title screen, persisted with the
+  station save, and visible on the crew standing around the sub — which is the
+  lobby preview. Recolouring is a palette swap keyed on four tones of the
+  sprite's own palette rather than a whole-sprite tint, so the suit and the
+  visor change independently and the air tank stays fixed as a common
+  reference. A hand-drawn replacement sprite inherits all of this by using the
+  same four hexes: see `docs/sprite-palette.md`. Emotes (issue #39) build on
+  the same per-peer profile and land next.
 
 ## Backlog (post-M6)
 
