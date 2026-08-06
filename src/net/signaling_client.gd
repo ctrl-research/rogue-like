@@ -30,6 +30,12 @@ var _pending_peers: Array[int] = []  # peer_connects that arrived before "id"
 # state did the connection reach — entirely invisible.
 var _cand_out := {}  # peer id -> candidates we sent
 var _cand_in := {}  # peer id -> candidates we received
+# Candidate types per direction (host / srflx / relay). Which types were on
+# offer decides whether a direct path was ever possible: two peers behind one
+# NAT with only srflx candidates need the router to hairpin, and most don't.
+var _type_out := {}  # peer id -> {type: count}
+var _type_in := {}  # peer id -> {type: count}
+var _ice_failed := {}
 var _peer_snap := {}  # peer id -> last reported state, so we log transitions
 var _status_report := 0.0
 var _last_status := -1
@@ -158,6 +164,7 @@ func _handle(raw: String) -> void:
 				var add_err: int = rtc.get_peer(pid).connection.add_ice_candidate(
 					str(msg.mid), int(msg.index), str(msg.name))
 				_cand_in[pid] = int(_cand_in.get(pid, 0)) + 1
+				_tally(_type_in, pid, candidate_type(str(msg.name)))
 				if add_err != OK:
 					print("[signaling] candidate %d from peer %d rejected: %s" % [
 							_cand_in[pid], pid, error_string(add_err)])
@@ -194,7 +201,34 @@ func _on_description(type: String, sdp: String, id: int, pc: WebRTCPeerConnectio
 	_send({"type": type, "id": id, "sdp": sdp})
 
 
+## The candidate line carries its own kind: "... typ host ...", srflx, or relay.
+static func candidate_type(sdp: String) -> String:
+	var at := sdp.find(" typ ")
+	if at == -1:
+		return "?"
+	var rest := sdp.substr(at + 5)
+	var end := rest.find(" ")
+	return rest.substr(0, end) if end != -1 else rest
+
+
+static func _tally(store: Dictionary, id: int, kind: String) -> void:
+	var counts: Dictionary = store.get(id, {})
+	counts[kind] = int(counts.get(kind, 0)) + 1
+	store[id] = counts
+
+
+static func _describe(store: Dictionary, id: int) -> String:
+	var counts: Dictionary = store.get(id, {})
+	if counts.is_empty():
+		return "none"
+	var parts: PackedStringArray = []
+	for kind in counts:
+		parts.append("%s:%d" % [kind, counts[kind]])
+	return ",".join(parts)
+
+
 func _on_candidate(mid: String, index: int, sdp_name: String, id: int) -> void:
+	_tally(_type_out, id, candidate_type(sdp_name))
 	_cand_out[id] = int(_cand_out.get(id, 0)) + 1
 	_send({"type": "candidate", "id": id, "mid": mid, "index": index, "name": sdp_name})
 
@@ -234,9 +268,21 @@ func _report_handshake(delta: float) -> void:
 				int(_cand_out.get(id, 0)), int(_cand_in.get(id, 0))]
 		if heartbeat or _peer_snap.get(id, "") != snap:
 			_peer_snap[id] = snap
-			print("[signaling] peer %d: connected=%s conn=%d gathering=%d signaling=%d candidates out=%d in=%d" % [
+			print("[signaling] peer %d: connected=%s conn=%d gathering=%d signaling=%d out=%d(%s) in=%d(%s)" % [
 					id, info.get("connected", false), conn, gather, sig,
-					int(_cand_out.get(id, 0)), int(_cand_in.get(id, 0))])
+					int(_cand_out.get(id, 0)), _describe(_type_out, id),
+					int(_cand_in.get(id, 0)), _describe(_type_in, id)])
+		# Gathering finished and still connecting means every pair was tried and
+		# none worked. Say so once, in words, rather than leaving a reader to
+		# infer it from two enums.
+		if not _ice_failed.has(id) and gather == WebRTCPeerConnection.GATHERING_STATE_COMPLETE \
+				and conn == WebRTCPeerConnection.STATE_CONNECTING \
+				and int(_cand_in.get(id, 0)) > 0:
+			_ice_failed[id] = true
+			print(("[signaling] peer %d: candidates exchanged and gathering complete, but no "
+					+ "pair connects — there is no route between these peers. Types offered: "
+					+ "out=%s in=%s. This needs a TURN relay.") % [
+					id, _describe(_type_out, id), _describe(_type_in, id)])
 
 
 func _friendly_error(reason: String) -> String:
