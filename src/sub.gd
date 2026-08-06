@@ -26,6 +26,11 @@ const STATION_RANGE := 30.0
 const WALL_LAYER := 4  # same hull layer the game scene uses
 
 const OPEN_WATER := Color("070f16")  # the sea the boat is sitting in
+## How long to wait for the peer connection before saying something useful. A
+## browser throttles hidden tabs almost to a stop, so a host sitting in a
+## background tab never processes the signalling that would answer the joiner —
+## the commonest way this fails, and invisible from the joiner's side.
+const LINK_STALL_SECONDS := 12.0
 
 var _roster := {}  # pid -> diver_id (host-authoritative, mirrored to all)
 var _entered_online := false  # session died while aboard -> back to the menu
@@ -34,6 +39,8 @@ var _entered_online := false  # session died while aboard -> back to the menu
 ## made the announce loop believe it had already been acknowledged and go quiet.
 var _acknowledged := false
 var _announce_cd := 0.0
+var _link_wait := 0.0  # seconds an online client has been waiting for the mesh
+var _link_tick := 0.0
 var _stations: Array[Dictionary] = []
 var _prompt: Label
 var _panel: PanelContainer
@@ -76,13 +83,18 @@ func _process(delta: float) -> void:
 	if _entered_online and not Net.is_online:
 		Net.leave()
 		return
-	# Clients: announce until the host has us aboard (retries cover joins
-	# that race the scene load or the WebRTC mesh coming up).
 	if not multiplayer.is_server() and not _acknowledged:
-		_announce_cd -= delta
-		if _announce_cd <= 0.0:
-			_announce_cd = 0.5
-			Net.sub_aboard.rpc_id(1, Station.diver)
+		# Only announce once the mesh actually has the host. rpc_id to a peer
+		# that isn't connected yet just pushes "unknown peer ID: 1" every retry,
+		# which reads like the announce is at fault when the truth is that the
+		# peer connection never came up — the error points at the wrong thing.
+		if multiplayer.get_peers().has(1):
+			_announce_cd -= delta
+			if _announce_cd <= 0.0:
+				_announce_cd = 0.5
+				Net.sub_aboard.rpc_id(1, Station.diver)
+		else:
+			_note_link_wait(delta)
 	_update_prompt()
 
 
@@ -147,6 +159,15 @@ func _on_roster(roster: Dictionary) -> void:
 			continue
 		_spawn_diver(pid, str(_roster[pid]), seat)
 	_refresh_wall_text()
+
+
+## Count the wait and keep the crew readout honest about it, once a second.
+func _note_link_wait(delta: float) -> void:
+	_link_wait += delta
+	_link_tick -= delta
+	if _link_tick <= 0.0:
+		_link_tick = 1.0
+		_refresh_wall_text()
 
 
 func _keep_self_aboard() -> void:
@@ -439,5 +460,8 @@ func _refresh_wall_text() -> void:
 	# A crew of 1 in an online room means the mesh hasn't come up. Say so —
 	# "1/4" on its own looks like a game that thinks you are alone.
 	if Net.is_online and multiplayer.get_peers().is_empty():
-		crew += "   LINKING..."
+		if _link_wait < LINK_STALL_SECONDS:
+			crew += "   LINKING... %ds" % int(_link_wait)
+		else:
+			crew += "   LINK STALLED — both windows must stay visible"
 	_crew_label.text = crew
