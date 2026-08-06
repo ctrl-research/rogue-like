@@ -3,16 +3,20 @@ extends Node
 ## survives scene changes. The host creates an online room and prints
 ## E2E_ROOM=<code>; the client joins via the E2E_ROOM env var.
 ##
-## Two runs are verified to cover the post-game lobby-retry flow:
+## Both peers board the sub on entered_lobby, exactly as the menu does, so the
+## handshake happens where players actually do it:
+##   both aboard, seeing each other -> E2E_<ROLE>_LOBBY_OK
+## Then two runs cover the post-game lobby-retry flow:
 ##   run 1 in-game checks   -> E2E_<ROLE>_OK
 ##   host: return_to_lobby  -> both peers land back aboard the sub, room intact
 ##   host: start_dive again -> run 2 in-game checks -> E2E_<ROLE>_RETRY_OK
 
 var role := "host"
 
-var _phase := "run1"
+var _phase := "lobby"
 var _evaluated := false  # one verification per run phase
 var _quitting := false
+var _lobby_report := 0.0  # countdown to the next lobby diagnostic
 var _saw_downed := false  # client: its diver was reported down
 var _revive_reported := false
 
@@ -36,18 +40,56 @@ func _ready() -> void:
 func _on_lobby(room: String, is_host: bool) -> void:
 	if is_host:
 		print("E2E_ROOM=%s" % room)
+	# Board the sub, exactly as main_menu does on entered_lobby. This test used
+	# to leave both peers parked in their entry scenes for the whole lobby, so
+	# the WebRTC handshake and the roster handshake never once happened while
+	# anyone was actually in the sub — which is the only way real players ever
+	# do it, and where joining is reported broken.
+	get_tree().change_scene_to_file(Net.SUB_SCENE)
 
 
 func _on_peer_connected(id: int) -> void:
 	print("[e2e-%s] peer_connected %d" % [role, id])
-	if role == "host" and multiplayer.is_server() and _phase == "run1" and not Net.in_game:
-		await get_tree().create_timer(1.5).timeout
-		print("[e2e-host] starting dive")
-		Net.start_dive()
 
 
-func _process(_delta: float) -> void:
+## Both peers aboard, seeing each other, before anyone dives. Waits rather than
+## asserting immediately: the mesh and the roster both take a moment. The
+## periodic report is the diagnostic — if this never completes, the log says
+## what each peer could see.
+func _check_lobby(delta: float) -> void:
+	var cs := get_tree().current_scene
+	if cs == null or cs.name != "Sub":
+		return
+	var crew := Net.player_count()
+	var aboard: int = cs.divers.get_child_count()
+	if crew >= 2 and aboard >= 2:
+		print("[e2e-%s] lobby ready: crew=%d aboard=%d" % [role, crew, aboard])
+		print("E2E_%s_LOBBY_OK" % role.to_upper())
+		_phase = "run1"
+		if role == "host":
+			_start_first_dive()
+		return
+	_lobby_report -= delta
+	if _lobby_report <= 0.0:
+		_lobby_report = 2.0
+		var peer := multiplayer.multiplayer_peer
+		print("[e2e-%s] lobby waiting: crew=%d aboard=%d peers=%s id=%d status=%d online=%s" % [
+			role, crew, aboard, str(multiplayer.get_peers()),
+			multiplayer.get_unique_id(),
+			peer.get_connection_status() if peer != null else -1, Net.is_online,
+		])
+
+
+func _start_first_dive() -> void:
+	await get_tree().create_timer(1.5).timeout
+	print("[e2e-host] starting dive")
+	Net.start_dive()
+
+
+func _process(delta: float) -> void:
 	match _phase:
+		"lobby":
+			_check_lobby(delta)
 		"run1":
 			if _run_verified(8.0):
 				print("E2E_%s_OK" % role.to_upper())

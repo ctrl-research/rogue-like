@@ -79,6 +79,10 @@ grep -q "E2E_HOST_OK" "$OUT_DIR/host.log"             || { echo "MISSING E2E_HOS
 grep -q "E2E_CLIENT_OK" "$OUT_DIR/client.log"         || { echo "MISSING E2E_CLIENT_OK"; FAIL=1; }
 grep -q "E2E_HOST_RETRY_OK" "$OUT_DIR/host.log"       || { echo "MISSING E2E_HOST_RETRY_OK"; FAIL=1; }
 grep -q "E2E_KIT_OK" "$OUT_DIR/host.log"              || { echo "MISSING E2E_KIT_OK"; FAIL=1; }
+# Both peers must see each other IN THE SUB before any dive starts — the sub is
+# the lobby, so this is the handshake real players actually go through.
+grep -q "E2E_HOST_LOBBY_OK" "$OUT_DIR/host.log"       || { echo "MISSING E2E_HOST_LOBBY_OK"; FAIL=1; }
+grep -q "E2E_CLIENT_LOBBY_OK" "$OUT_DIR/client.log"   || { echo "MISSING E2E_CLIENT_LOBBY_OK"; FAIL=1; }
 # Downed/revive is a two-player mechanic, so this is the only test that can
 # reach it: the host drives the drill, the client confirms it saw its own diver
 # go down and stand up purely from replicated state.
