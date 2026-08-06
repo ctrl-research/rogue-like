@@ -20,12 +20,10 @@ const KEY_SUIT_DARK := "#8a6508"
 const KEY_SCREEN_LIT := "#9fe8ff"
 const KEY_SCREEN_DARK := "#0e3a52"
 
-## Curated swatches rather than a free colour picker, for two reasons. This game
-## is played inside a small lamp radius in near-black water, so an arbitrary
-## picker lets a player choose something that simply cannot be seen — and a fixed
-## set keeps the palette coherent as pixel art instead of letting one diver show
-## up in 24-bit gradient soup.
-const SUIT_SWATCHES: Array[String] = [
+## Preset colours offered in the picker. Not a restriction — the picker accepts
+## any colour, and these are seeded into it as presets so there is something
+## coherent to start from rather than a blank gradient.
+const SUIT_PRESETS: Array[String] = [
 	"#d9a521",  # brass (stock)
 	"#d94f3d",  # rust
 	"#3fa9d9",  # cyan
@@ -37,7 +35,7 @@ const SUIT_SWATCHES: Array[String] = [
 	"#8f9ed9",  # steel
 	"#d9d0a8",  # bone
 ]
-const SCREEN_SWATCHES: Array[String] = [
+const SCREEN_PRESETS: Array[String] = [
 	"#9fe8ff",  # ice (stock)
 	"#ffe89f",  # lamp
 	"#b6ff9f",  # phosphor
@@ -47,6 +45,17 @@ const SCREEN_SWATCHES: Array[String] = [
 	"#ffc99f",  # ember
 	"#ffffff",  # white
 ]
+
+## The one colour constraint, and it is functional rather than taste: 2D lights
+## MULTIPLY. A pure black suit is still black under a lamp however much light
+## lands on it, so it doesn't read as "a dark diver" — it reads as no diver.
+##
+## Measured on the BRIGHTEST channel, not on luminance. Luminance weights blue at
+## 0.07, so a luminance floor would have declared #0000ff too dark and lightened
+## it into a pastel — breaking "pick any colour" for a colour that multiplies
+## light perfectly well. The brightest channel is what decides whether anything
+## survives the multiply, which is the actual question.
+const MIN_CHANNEL := 0.35
 
 const DEFAULT_SUIT := "#d9a521"
 const DEFAULT_SCREEN := "#9fe8ff"
@@ -81,28 +90,33 @@ static func sanitize_name(raw: String) -> String:
 	return out.to_upper()
 
 
-## Snap to the nearest allowed swatch instead of validating and rejecting. This
-## is total — every input yields a legible colour — so a garbled or hostile
-## payload from a peer degrades to something visible rather than to an invisible
-## diver, and no caller needs an error path.
-static func snap(raw: Variant, swatches: Array[String], fallback: String) -> String:
+## Any colour the player likes, with one floor applied (see MIN_CHANNEL). Total by
+## construction — unparseable, absent or non-string input yields the fallback —
+## so no caller needs an error path, and a hostile payload from a peer degrades
+## to something drawable rather than to an invisible diver.
+static func normalize_color(raw: Variant, fallback: String) -> String:
 	if not raw is String or str(raw).is_empty():
 		return fallback
-	var want := Color.from_string(str(raw), Color.from_string(fallback, Color.WHITE))
-	var best := fallback
-	var best_dist := INF
-	for hex in swatches:
-		# Component-wise: Color has no distance helpers (those are the Vector
-		# types), and squared distance avoids a pointless sqrt for a comparison.
-		var c := Color.from_string(hex, Color.BLACK)
-		var dr := c.r - want.r
-		var dg := c.g - want.g
-		var db := c.b - want.b
-		var dist := dr * dr + dg * dg + db * db
-		if dist < best_dist:
-			best_dist = dist
-			best = hex
-	return best
+	var text := str(raw)
+	if not text.begins_with("#"):
+		text = "#" + text
+	if not Color.html_is_valid(text.substr(1)):
+		return fallback
+	return "#" + lift(Color.from_string(text, Color.WHITE)).to_html(false)
+
+
+## Scale a too-dark colour up until its brightest channel reaches the floor.
+## Scaling all three channels by the same factor preserves the hue and the
+## saturation exactly, so the pick is honoured — only its brightness moves. Pure
+## black is the single input with no hue to preserve, and becomes a grey.
+static func lift(c: Color) -> Color:
+	var peak := maxf(c.r, maxf(c.g, c.b))
+	if peak >= MIN_CHANNEL:
+		return c
+	if peak <= 0.0001:
+		return Color(MIN_CHANNEL, MIN_CHANNEL, MIN_CHANNEL)
+	var scale := MIN_CHANNEL / peak
+	return Color(c.r * scale, c.g * scale, c.b * scale)
 
 
 ## Never trust a profile that arrived over the network — or one loaded from a
@@ -113,8 +127,8 @@ static func sanitize(raw: Variant) -> Dictionary:
 	var d: Dictionary = raw
 	return {
 		"name": sanitize_name(str(d.get("name", ""))),
-		"suit": snap(d.get("suit", DEFAULT_SUIT), SUIT_SWATCHES, DEFAULT_SUIT),
-		"screen": snap(d.get("screen", DEFAULT_SCREEN), SCREEN_SWATCHES, DEFAULT_SCREEN),
+		"suit": normalize_color(d.get("suit", DEFAULT_SUIT), DEFAULT_SUIT),
+		"screen": normalize_color(d.get("screen", DEFAULT_SCREEN), DEFAULT_SCREEN),
 	}
 
 
