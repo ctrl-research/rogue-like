@@ -1,0 +1,58 @@
+name: Prod signaling e2e
+
+# Manual only. Runs the same two-instance WebRTC test as the main build, but
+# against the DEPLOYED hub instead of a local broker, so a lobby that works in
+# CI and fails in the wild can be pinned on the broker or ruled out.
+#
+# The local-broker e2e always builds the broker from this repo, so it passes
+# even when the deployed image is behind — which is exactly the gap this fills.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Signaling URL to test"
+        default: "wss://lobby.j6n.dev"
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.6.3"
+
+jobs:
+  prod-e2e:
+    name: Two instances via the deployed hub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Godot and export templates
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" godot
+          chmod +x godot
+
+      # The desktop WebRTC extension is what makes a headless instance able to
+      # peer at all; without it both instances would fail before reaching the hub.
+      - name: Fetch WebRTC extension
+        run: bash scripts/fetch_webrtc.sh
+
+      - name: Import project
+        run: ./godot --headless --path . --import 2>&1 | tail -20
+
+      - name: Report the hub's health
+        run: |
+          url="${{ inputs.url }}"
+          host="${url#wss://}"; host="${host#ws://}"
+          echo "hub: $url"
+          curl -sS --max-time 10 "https://$host/health" || echo "(no health response)"
+
+      - name: Two-instance e2e against the deployed hub
+        env:
+          SIGNALING_URL: ${{ inputs.url }}
+        run: bash scripts/e2e_webrtc_prod.sh

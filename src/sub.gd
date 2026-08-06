@@ -58,6 +58,10 @@ func _ready() -> void:
 		multiplayer.peer_disconnected.connect(_on_peer_left)
 		_roster[1] = Station.diver
 		_broadcast_roster()
+	else:
+		# Clients draw themselves immediately rather than waiting to be
+		# acknowledged; the roster reconciles them into their seat when it lands.
+		_on_roster({})
 	_refresh_wall_text()
 
 
@@ -112,6 +116,12 @@ func _on_remote_pos(pid: int, pos: Vector2) -> void:
 
 func _on_roster(roster: Dictionary) -> void:
 	_roster = roster
+	# You are always aboard your own sub. Until the host acknowledges the
+	# announce, its roster doesn't mention you — and culling against it would
+	# delete the diver you're standing in, leaving a client alone in an empty
+	# boat with no body of its own. That reads as a broken game rather than as
+	# "nobody else is here yet", which is what it actually is.
+	_keep_self_aboard()
 	for child in divers.get_children():
 		var pid := int(str(child.name).trim_prefix("D"))
 		if not _roster.has(pid):
@@ -126,15 +136,25 @@ func _on_roster(roster: Dictionary) -> void:
 				existing.diver_id = _roster[pid]
 				existing.refresh_label()
 			continue
-		var d: CharacterBody2D = DIVER_SCENE.instantiate()
-		d.name = node_name
-		d.peer_id = pid
-		d.diver_id = _roster[pid]
-		# Spaced along the deck's lower half, clear of the stations up top.
-		d.position = INTERIOR.position + Vector2(34 + 40 * seat, 76)
-		Fx.attach_shadow(d)
-		divers.add_child(d)
+		_spawn_diver(pid, str(_roster[pid]), seat)
 	_refresh_wall_text()
+
+
+func _keep_self_aboard() -> void:
+	var mine := multiplayer.get_unique_id()
+	if not _roster.has(mine):
+		_roster[mine] = Station.diver
+
+
+func _spawn_diver(pid: int, diver_id: String, seat: int) -> void:
+	var d: CharacterBody2D = DIVER_SCENE.instantiate()
+	d.name = "D%d" % pid
+	d.peer_id = pid
+	d.diver_id = diver_id
+	# Spaced along the deck's lower half, clear of the stations up top.
+	d.position = INTERIOR.position + Vector2(34 + 40 * seat, 76)
+	Fx.attach_shadow(d)
+	divers.add_child(d)
 
 
 func _broadcast_roster() -> void:
@@ -407,4 +427,8 @@ func _refresh_wall_text() -> void:
 	var crew := "CREW %d/%d" % [Net.player_count(), Net.MAX_PLAYERS]
 	if Net.is_online and not Net.room_code.is_empty():
 		crew += "   ROOM %s" % Net.room_code
+	# A crew of 1 in an online room means the mesh hasn't come up. Say so —
+	# "1/4" on its own looks like a game that thinks you are alone.
+	if Net.is_online and multiplayer.get_peers().is_empty():
+		crew += "   LINKING..."
 	_crew_label.text = crew
