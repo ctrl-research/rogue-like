@@ -37,3 +37,49 @@ production, then point the game at the broker via the
 `network/signaling/url` project setting.
 
 Health check: plain HTTP `GET /health` returns `200 ok`.
+
+## A TURN relay is required for browser co-op
+
+The hub only brokers the handshake. Whether the peers can then reach each other
+is a separate question, and for browsers the answer is often no — measured, not
+assumed:
+
+```
+peer 2: gathering=2 out=host:1,srflx:1 in=host:1,srflx:1  conn=1 (forever)
+```
+
+Signalling completed, candidates crossed both ways, gathering finished, and no
+pair connected. Both candidate types were on offer and neither worked:
+
+- **host** — Chrome replaces the local address with a random `<uuid>.local`
+  **mDNS** name for privacy. If the other peer can't resolve that name over
+  multicast, the pair is unusable. Desktop builds don't hit this: they offer a
+  real IP.
+- **srflx** — STUN only reveals a peer's *public* address. Two peers behind one
+  NAT would have to reach each other through it, which needs the router to
+  **hairpin**, and most don't.
+
+Neither is fixable from the game: mDNS obfuscation is a browser privacy feature,
+hairpinning belongs to the router. A relay removes the need for a direct path.
+
+Deploy [coturn](https://github.com/coturn/coturn) beside the hub, then add it to
+the `network/signaling/ice_servers` project setting alongside the STUN entry:
+
+```json
+[{"urls": ["stun:stun.l.google.com:19302"]},
+ {"urls": ["turn:turn.j6n.dev:3478"], "username": "…", "credential": "…"}]
+```
+
+The client already reads TURN entries from that setting (`SignalingClient.ice_servers`),
+so this is deployment and configuration only — no code change.
+
+Two things to keep in mind. **The credentials are public**: any browser client can
+read them out of the exported build, so rate-limit the relay or hand out
+short-lived credentials rather than treating them as a secret. And **relayed
+traffic costs bandwidth** — unlike the handshake, game packets flow through the
+relay for peers that need it, so size it accordingly.
+
+To tell whether a deployed relay is actually being used, look for `relay` in the
+candidate types the client logs. If `relay` never appears, the game never reached
+the TURN server (wrong port, blocked UDP, or bad credentials) — and the log line
+naming the types is there precisely so that is answerable.
