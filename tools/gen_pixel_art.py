@@ -241,6 +241,38 @@ CONSOLE = {
     },
 }
 
+# 16x16 wardrobe (sub interior): mirror over two dye canisters. Deliberately
+# unlike the locker next to it — that one is a closed cabinet of suits (pick your
+# class), this one is a mirror you stand at (pick your look). The canisters carry
+# the two stock diver colours so the station reads as "colour" at 16px.
+WARDROBE = {
+    "grid": [
+        "................",
+        "................",
+        "..GGGGGGGGGGGG..",
+        "..GLLLLLLLLLLG..",
+        "..GLLLLLWLLLLG..",
+        "..GLLLLWWWLLLG..",
+        "..GLLLLLWLLLLG..",
+        "..GLLLLLLLLLLG..",
+        "..GGGGGGGGGGGG..",
+        "..G..........G..",
+        "..G.CC....YY.G..",
+        "..G.CC....YY.G..",
+        "..GGGGGGGGGGGG..",
+        "..GG........GG..",
+        "................",
+        "................",
+    ],
+    "palette": {
+        "G": "#4a5a64",
+        "L": "#24404e",
+        "W": "#ffffff",
+        "C": "#d9a521",
+        "Y": "#9fe8ff",
+    },
+}
+
 # 16x16 diver locker (sub interior): tall cabinet with suit silhouette
 LOCKER = {
     "grid": [
@@ -647,6 +679,7 @@ SPRITES = {
     "arrow.png": ARROW,
     "console.png": CONSOLE,
     "locker.png": LOCKER,
+    "wardrobe.png": WARDROBE,
     "hatch.png": HATCH,
     "porthole.png": PORTHOLE,
     "relay.png": RELAY,
