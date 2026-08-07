@@ -13,9 +13,6 @@ signal upgrade_offered(options: Array)
 const BASE_SPEED := 90.0
 const BASE_MAX_HP := 100.0
 const BASE_PICKUP_RADIUS := 28.0
-## light.png's drawn radius at scale 1, so a reach in pixels can be turned into
-## a texture_scale. Same trick as sonar_ring.gd's SPRITE_RADIUS.
-const LAMP_SPRITE_RADIUS := 63.5
 const LANCE_TINT := Color(0.55, 0.95, 1.0)
 const SOLAR_TINT := Color(1.0, 0.72, 0.3)
 const DRONE_TEXTURE := preload("res://assets/sprites/drone.png")
@@ -266,7 +263,11 @@ func _update_lamp() -> void:
 			int(meta.get("lamp", 0)),
 			passives.get("lamp", 0),
 			game.depth if game != null else 1)
-	$Lamp.texture_scale = reach / LAMP_SPRITE_RADIUS
+	# Built at 1:1 and left unscaled. Scaling a fixed disc to reach meant a
+	# fractional texture_scale, which spread the stepped edge unevenly across the
+	# pixel grid and read as blur however hard the source edge was.
+	$Lamp.texture = LampTexture.for_radius(int(roundf(reach)))
+	$Lamp.texture_scale = 1.0
 
 
 # --- Combat (server) -------------------------------------------------------
