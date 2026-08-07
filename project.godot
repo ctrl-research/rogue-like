@@ -11,6 +11,11 @@ config_version=5
 [application]
 
 config/name="Abyssal Salvage"
+; Single source of truth for the release version. .github/workflows/release.yml
+; refuses to publish a v* tag that does not match this, and signaling/package.json
+; is checked against it too — so a forgotten bump fails the release instead of
+; shipping three artifacts that disagree about what they are.
+config/version="0.1.0"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.6.3", "GL Compatibility")
 config/icon="res://icon.svg"

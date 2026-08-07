@@ -1,0 +1,202 @@
+name: Release
+
+# Cuts a release from a v* tag: desktop binaries, a self-contained web bundle, and
+# a reference to the versioned signalling image.
+#
+# One repo-wide version rather than per-component versions, because the hub's
+# protocol and the client that speaks it ship from here together — a single number
+# makes "which hub works with which client" answerable. If the web frontend moves
+# to its own project later, it takes its own tags with it.
+#
+#   git tag v0.1.0 && git push --tags
+on:
+  push:
+    tags:
+      - "v*"
+  # Dry run: builds and checks everything, publishes nothing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.6.3"
+
+jobs:
+  # Fail before building anything if the version fields disagree with the tag.
+  # A forgotten bump would otherwise ship three artifacts that disagree about
+  # what they are, and the in-game version would lie.
+  verify:
+    name: Verify version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check tag against project.godot and package.json
+        id: check
+        run: |
+          set -euo pipefail
+          godot_version=$(sed -n 's/^config\/version="\(.*\)"$/\1/p' project.godot)
+          pkg_version=$(node -p "require('./signaling/package.json').version")
+          echo "project.godot:        $godot_version"
+          echo "signaling/package.json: $pkg_version"
+
+          if [ "$godot_version" != "$pkg_version" ]; then
+            echo "::error::project.godot ($godot_version) and signaling/package.json ($pkg_version) disagree"
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            echo "tag:                 $tag"
+            if [ "$tag" != "$godot_version" ]; then
+              echo "::error::tag v$tag does not match config/version=$godot_version — bump project.godot and signaling/package.json first"
+              exit 1
+            fi
+          else
+            echo "not a tag build (dry run); skipping the tag comparison"
+          fi
+          echo "version=$godot_version" >> "$GITHUB_OUTPUT"
+
+  # Reuses the Desktop workflow rather than duplicating the export, so releases
+  # cannot drift from what CI already builds and checks on every PR.
+  desktop:
+    name: Desktop
+    needs: verify
+    uses: ./.github/workflows/desktop.yml
+
+  web:
+    name: Web bundle
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Same setup as build.yml / desktop.yml. Duplicated rather than shared
+      # because build.yml also owns the Pages deployment and gates merges; keeping
+      # this separate means a release cannot break the merge gate.
+      - name: Download Godot and export templates
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" godot
+          chmod +x godot
+          unzip -q templates.tpz
+          template_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$template_dir"
+          mv templates/* "$template_dir/"
+
+      - name: Export web
+        run: |
+          set -euo pipefail
+          mkdir -p build/web
+          ./godot --headless --path . --import 2>&1 | tee -a web.log
+          ./godot --headless --path . --export-release "Web" "build/web/index.html" 2>&1 | tee -a web.log
+          test -f build/web/index.html
+
+      - name: Verify no GDScript parse / autoload / shader errors
+        run: |
+          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|Failed to create an autoload|does not inherit from|SHADER ERROR|Shader compilation failed" web.log; then
+            echo "::error::errors detected during the web export (see matches above)."
+            exit 1
+          fi
+          echo "clean"
+
+      # A self-contained archive, so a release can be served from anywhere without
+      # rebuilding — which is what makes moving the frontend out later cheap.
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          (cd build/web && zip -qr "../../dist/AbyssalSalvage-web-${{ needs.verify.outputs.version }}.zip" .)
+          ls -lh dist/
+
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [verify, desktop, web]
+    # Only a real tag publishes; workflow_dispatch stops after building.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download desktop builds
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-builds
+          path: dist
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: dist
+
+      # gh is preinstalled, so publishing binaries involves no third-party action.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -lh dist/
+          notes=$(cat <<NOTES
+          ## Desktop
+
+          Both builds are **unsigned**, so the OS warns on first launch:
+
+          - **macOS** — unzip, then right-click the app and choose *Open* (or
+            \`xattr -dr com.apple.quarantine AbyssalSalvage.app\`). Double-clicking
+            it normally will be refused.
+          - **Windows** — SmartScreen warns; *More info* then *Run anyway*. Single
+            \`.exe\`, the pck is embedded.
+
+          ## Playing together
+
+          **Direct connect needs no server at all.** One player picks HOST LAN, the
+          others JOIN LAN with that machine's address. Over the internet the host
+          forwards UDP 7777 and shares their public address — only the **host** needs
+          to be reachable, so a player behind mobile data or CGNAT can still join.
+
+          **Online room codes** go through the signalling hub and are peer-to-peer.
+          Two peers that cannot reach each other directly (both behind one NAT, or
+          either on CGNAT) need a TURN relay configured on the hub — see
+          \`signaling/README.md\`.
+
+          ## Web
+
+          \`AbyssalSalvage-web-${VERSION}.zip\` is a self-contained static bundle,
+          the same build deployed to GitHub Pages. Serve it from any static host.
+
+          ## Signalling hub
+
+          \`\`\`
+          ghcr.io/${GITHUB_REPOSITORY}/signaling:${VERSION}
+          \`\`\`
+
+          Published by the Signaling Image workflow from this same tag. Pin this
+          rather than \`:latest\` so a client and hub of known-compatible versions
+          stay together.
+          NOTES
+          )
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "$notes" \
+            --verify-tag
