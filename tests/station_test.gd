@@ -161,6 +161,10 @@ func _ready() -> void:
 	# the locker panel only opens on a keypress — so a renamed ColorPicker
 	# property or a bad shader path here would reach players untested.
 	var probe := VBoxContainer.new()
+	# Placed and sized explicitly so the controls inside get meaningful global
+	# rects — the placement assertions below are about real geometry.
+	probe.position = Vector2(100, 200)
+	probe.size = Vector2(120, 70)
 	add_child(probe)
 	StationUi.build_appearance(probe, 32)
 	_check(probe.get_child_count() >= 4, "appearance editor builds its rows")
@@ -179,11 +183,25 @@ func _ready() -> void:
 		var popup := found_picker.get_popup()
 		_check(popup != null, "the picker button has a popup")
 		if popup != null:
+			# Let the containers lay out first: placement is computed from the
+			# button's global rect, which is meaningless before a layout pass.
+			await get_tree().process_frame
 			popup.about_to_popup.emit()
 			_check(is_equal_approx(popup.content_scale_factor, StationUi.PICKER_SCALE),
 					"the popup is scaled down rather than merely trimmed")
 			_check(popup.size.y <= 180,
 					"the popup is at most half the screen height, not all of it")
+			# Centred on its button rather than parked wherever the pre-scale size
+			# happened to fit, which was the top of the screen.
+			if popup.is_embedded():
+				var button_mid := found_picker.get_global_rect().get_center().x
+				var popup_mid := popup.position.x + popup.size.x / 2.0
+				_check(absf(button_mid - popup_mid) <= 2.0,
+						"the popup is centred on its colour button")
+				var view := get_viewport().get_visible_rect().size
+				_check(popup.position.y >= 0
+						and popup.position.y + popup.size.y <= int(view.y),
+						"the popup sits fully on screen")
 	probe.queue_free()
 
 	# Lamp disc: built at exactly the reach it will be drawn at, so texture_scale

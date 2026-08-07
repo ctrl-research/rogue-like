@@ -15,6 +15,7 @@ const PICKER_SCALE := 0.4
 const PICKER_PAD := 6  # popup panel's own border, in post-scale pixels
 const PICKER_MIN_W := 96
 const PICKER_MIN_H := 72
+const POPUP_GAP := 2  # pixels between the popup and the button it belongs to
 
 
 ## Appearance editor: preview, name, and a colour picker per recolourable region.
@@ -138,13 +139,40 @@ static func _add_color_row(parent: VBoxContainer, draft: Dictionary, repaint: Ca
 				want = picker.get_combined_minimum_size() * PICKER_SCALE
 			popup.size = Vector2i(
 					maxi(int(want.x) + PICKER_PAD, PICKER_MIN_W),
-					maxi(int(want.y) + PICKER_PAD, PICKER_MIN_H)))
+					maxi(int(want.y) + PICKER_PAD, PICKER_MIN_H))
+			place_popup_over(button, popup))
 
 	button.color_changed.connect(func(c: Color) -> void:
 		draft[key] = "#" + c.to_html(false)
 		repaint.call())
 	# Commit on close, not on change — see build_appearance.
 	button.popup_closed.connect(func() -> void: Station.set_profile(draft))
+
+
+## Centre the popup horizontally on its button and sit it just above, clamped into
+## the viewport.
+##
+## Necessary because ColorPickerButton chooses the popup's position BEFORE
+## about_to_popup fires, using whatever size the popup had at that moment — the
+## unscaled one. That is how a popup we shrink in about_to_popup ended up parked at
+## the top of the screen: the position was picked for a full-height window, which
+## only fitted up there, and then it got smaller without moving.
+static func place_popup_over(button: Control, popup: Window) -> void:
+	# Native (non-embedded) windows position in screen coordinates and are placed
+	# by the OS, so the arithmetic below would be in the wrong space. Godot's own
+	# placement is fine there; this only misbehaves for embedded popups.
+	if not popup.is_embedded():
+		return
+	var view := button.get_viewport_rect().size
+	var anchor := button.get_global_rect()
+	var pos := Vector2(
+			anchor.get_center().x - popup.size.x / 2.0,
+			anchor.position.y - popup.size.y - POPUP_GAP)
+	if pos.y < 0.0:
+		pos.y = anchor.end.y + POPUP_GAP  # no room above, so drop below instead
+	pos.x = clampf(pos.x, 0.0, maxf(view.x - popup.size.x, 0.0))
+	pos.y = clampf(pos.y, 0.0, maxf(view.y - popup.size.y, 0.0))
+	popup.position = Vector2i(pos)
 
 
 static func build_divers(parent: VBoxContainer) -> void:
