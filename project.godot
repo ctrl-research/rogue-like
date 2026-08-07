@@ -70,4 +70,10 @@ signaling/ice_servers="[{\"urls\": [\"stun:stun.l.google.com:19302\"]}]"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/canvas_textures/default_texture_filter=0
+; Required to export macOS as universal (or arm64) — the exporter refuses
+; otherwise. Free here in practice: every texture in the project imports with
+; compress/mode=0 (lossless), so nothing is VRAM-compressed and no ETC2/ASTC
+; variants are generated. Without it, Apple Silicon Macs would have to run an
+; x86_64 build under Rosetta.
+textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.016, 0.043, 0.086, 1)
