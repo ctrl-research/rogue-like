@@ -237,6 +237,13 @@ func _ready() -> void:
 				lopsided = true
 	_check(not lopsided, "the disc is symmetric horizontally and vertically")
 
+	# The wardrobe sprite's .import was hand-written (md5 of the resource path,
+	# uid checked against every other in the project), so verify it actually
+	# imports — a bad one shows up in game as a station with no sprite.
+	var wardrobe: Texture2D = load("res://assets/sprites/wardrobe.png")
+	_check(wardrobe != null and wardrobe.get_width() == 16 and wardrobe.get_height() == 16,
+			"the wardrobe sprite imports")
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()

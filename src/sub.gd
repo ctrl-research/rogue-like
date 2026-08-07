@@ -232,14 +232,22 @@ func _local_diver() -> Node2D:
 # --- Interaction -------------------------------------------------------------
 
 
+## Genuinely the nearest, not the first in range. It used to return whichever
+## station appeared first in _stations, which was invisible while they were far
+## enough apart that their ranges never overlapped — adding the wardrobe closed
+## those gaps, and standing between two would have opened the wrong panel.
 func _nearest_station() -> Dictionary:
 	var me := _local_diver()
 	if me == null:
 		return {}
+	var best := {}
+	var best_dist := STATION_RANGE * STATION_RANGE
 	for s in _stations:
-		if me.position.distance_to(s.pos) <= STATION_RANGE:
-			return s
-	return {}
+		var dist: float = me.position.distance_squared_to(s.pos)
+		if dist <= best_dist:
+			best_dist = dist
+			best = s
+	return best
 
 
 func _update_prompt() -> void:
@@ -281,12 +289,13 @@ func _open_panel(kind: String) -> void:
 		"locker":
 			title.text = "DIVER LOCKER — BANK %d" % Station.bank
 			StationUi.build_divers(box)
-			# Appearance lives at the locker rather than at a station of its own:
-			# it is where the suit hangs, the deck is only 204px wide, and this
-			# is the second chance for anyone who walked past the title screen.
-			# Changes broadcast to the crew through _on_station_changed below.
-			StationUi.header(box, "APPEARANCE")
-			StationUi.build_appearance(box, 32)
+		"wardrobe":
+			# Its own station rather than a section of the locker: seven diver rows
+			# plus an appearance editor overflowed the panel and cut the second
+			# colour off entirely. Changes broadcast to the crew through
+			# _on_station_changed below.
+			title.text = "WARDROBE"
+			StationUi.build_appearance(box, 48)
 		"stash":
 			title.text = "SALVAGE STASH"
 			for line in [
@@ -396,13 +405,19 @@ func _build_interior() -> void:
 			p.position = Vector2(x, y)
 			add_child(p)
 
+	# Four stations along the deck, evenly spaced. They sit closer together than
+	# before to make room for the wardrobe, which is why _nearest_station had to
+	# start actually returning the nearest one — see the note there.
 	var deck_top := INTERIOR.position.y + 22
 	_add_station("console", "CONSOLE", preload("res://assets/sprites/console.png"),
-			Vector2(INTERIOR.position.x + 40, deck_top))
+			Vector2(INTERIOR.position.x + 36, deck_top))
 	_add_station("locker", "LOCKER", preload("res://assets/sprites/locker.png"),
-			Vector2(INTERIOR.position.x + 112, deck_top))
+			Vector2(INTERIOR.position.x + 82, deck_top))
+	# Wardrobe next to the locker on purpose: pick your class, then your look.
+	_add_station("wardrobe", "WARDROBE", preload("res://assets/sprites/wardrobe.png"),
+			Vector2(INTERIOR.position.x + 128, deck_top))
 	_add_station("stash", "STASH", preload("res://assets/sprites/crate.png"),
-			Vector2(INTERIOR.position.x + 168, deck_top + 2))
+			Vector2(INTERIOR.position.x + 174, deck_top + 2))
 	_add_station("hatch", "DIVE HATCH", preload("res://assets/sprites/hatch.png"),
 			Vector2(INTERIOR.end.x - 26, INTERIOR.position.y + INTERIOR.size.y / 2.0))
 

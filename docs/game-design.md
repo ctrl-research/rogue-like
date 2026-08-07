@@ -263,8 +263,10 @@ terrain are untouched by it.
   with the station save, and visible on the crew standing around the sub — which
   is the lobby preview. The title screen splits into two columns (connecting on
   the left, your diver on the right) rather than overlaying one on the other, and
-  the same editor is hosted at the sub's diver locker so anyone who walked past
-  it at boot can still change it mid-campaign. Recolouring is a palette swap keyed on four tones of the
+  the same editor is hosted at a WARDROBE station in the sub so anyone who walked
+  past it at boot can still change it mid-campaign. The wardrobe is its own
+  station next to the LOCKER — class at one, look at the other — because folding
+  the editor into the locker panel overflowed it and cut the second colour off. Recolouring is a palette swap keyed on four tones of the
   sprite's own palette rather than a whole-sprite tint, so the suit and the
   visor change independently and the air tank stays fixed as a common
   reference. A hand-drawn replacement sprite inherits all of this by using the
