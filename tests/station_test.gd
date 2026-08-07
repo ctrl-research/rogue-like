@@ -186,6 +186,39 @@ func _ready() -> void:
 					"the popup is at most half the screen height, not all of it")
 	probe.queue_free()
 
+	# Lamp disc: built at exactly the reach it will be drawn at, so texture_scale
+	# stays 1.0 and one texture pixel is one game pixel. A fractional scale is what
+	# made a hard-edged disc read as blurry.
+	var disc := LampTexture.for_radius(64)
+	_check(disc != null and disc.get_width() == 128 and disc.get_height() == 128,
+			"the disc is generated at 1:1 for its reach")
+	_check(LampTexture.for_radius(64) == disc, "discs are cached per reach")
+	var disc_img := disc.get_image()
+	_check(is_equal_approx(disc_img.get_pixel(64, 64).a, 1.0),
+			"the middle of the lamp is at full strength")
+	# A hard cut, not a fade: the corner is outside the circle entirely.
+	_check(is_equal_approx(disc_img.get_pixel(0, 0).a, 0.0),
+			"outside the lamp is fully transparent")
+	# Still banded, so the light falls off toward the rim in countable steps.
+	_check(disc_img.get_pixel(124, 64).a < disc_img.get_pixel(64, 64).a,
+			"the rim is dimmer than the middle")
+	_check(LampTexture.for_radius(1).get_width() == LampTexture.MIN_RADIUS * 2,
+			"a silly reach clamps instead of producing a degenerate image")
+	# Symmetry, which the first version of the span maths got wrong: rounding a
+	# run's start and its width independently biased one side and made the disc
+	# visibly lopsided. Sampled rather than compared pixel by pixel to keep the
+	# unit test quick.
+	var lopsided := false
+	for probe_y in [8, 32, 64, 100, 127]:
+		for probe_x in [3, 17, 40, 63]:
+			var left := disc_img.get_pixel(probe_x, probe_y).a
+			var right := disc_img.get_pixel(127 - probe_x, probe_y).a
+			var top := disc_img.get_pixel(probe_x, probe_y).a
+			var bottom := disc_img.get_pixel(probe_x, 127 - probe_y).a
+			if not is_equal_approx(left, right) or not is_equal_approx(top, bottom):
+				lopsided = true
+	_check(not lopsided, "the disc is symmetric horizontally and vertically")
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()
