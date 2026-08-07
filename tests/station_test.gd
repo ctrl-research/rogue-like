@@ -170,13 +170,20 @@ func _ready() -> void:
 		var picker := found_picker.get_picker()
 		_check(picker != null, "the picker is instantiated eagerly, not on first press")
 		if picker != null:
-			# The point of the trimming: it must not open at desktop-inspector
-			# size over a 640x360 screen.
 			_check(not picker.sliders_visible and not picker.sampler_visible,
 					"the picker is trimmed down")
 			_check(picker.hex_visible, "hex stays reachable so any colour can be typed")
-			_check(picker.custom_minimum_size.x <= StationUi.PICKER_WIDTH,
-					"the picker is narrow")
+		# The size itself, which is the part that actually regressed once: trimming
+		# alone left the popup nearly the full 360px height, because a minimum size
+		# cannot shrink a Control. Emit about_to_popup to run the real sizing path.
+		var popup := found_picker.get_popup()
+		_check(popup != null, "the picker button has a popup")
+		if popup != null:
+			popup.about_to_popup.emit()
+			_check(is_equal_approx(popup.content_scale_factor, StationUi.PICKER_SCALE),
+					"the popup is scaled down rather than merely trimmed")
+			_check(popup.size.y <= 180,
+					"the popup is at most half the screen height, not all of it")
 	probe.queue_free()
 
 	# Days: each dive turns the calendar, and it persists.

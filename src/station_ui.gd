@@ -3,9 +3,18 @@ class_name StationUi
 ## consoles (and anywhere else the crew spends banked salvage). Each builder
 ## appends rows to `parent`; callers rebuild on Station.changed.
 
-## Colour picker popup width. Narrow on purpose: the internal resolution is
-## 640x360, and a stock ColorPicker is sized for a desktop inspector.
-const PICKER_WIDTH := 124
+## Colour picker popup scale. The internal resolution is 640x360 and a stock
+## ColorPicker is built for a desktop inspector, so it is scaled down rather than
+## merely trimmed — a minimum size cannot make a Control smaller than it is.
+##
+## This is the one number to turn if the popup is still the wrong size: 0.4 puts
+## it at roughly a quarter of the screen height, which is what it is for. Below
+## about 0.35 the hex field stops being readable, and the gradient becomes too
+## coarse to land on a specific colour.
+const PICKER_SCALE := 0.4
+const PICKER_PAD := 6  # popup panel's own border, in post-scale pixels
+const PICKER_MIN_W := 96
+const PICKER_MIN_H := 72
 
 
 ## Appearance editor: preview, name, and a colour picker per recolourable region.
@@ -97,10 +106,8 @@ static func _add_color_row(parent: VBoxContainer, draft: Dictionary, repaint: Ca
 	var picker := button.get_picker()
 	if picker != null:
 		# A stock ColorPicker is built for a desktop inspector: an eyedropper
-		# strip, colour-mode buttons and a full slider stack. At 640x360 that is
-		# half the screen, and it opened over the diver preview it is meant to be
-		# previewing. Gradient plus hex plus presets is the whole job.
-		picker.custom_minimum_size = Vector2(PICKER_WIDTH, 0)
+		# strip, colour-mode buttons and a full slider stack. Hiding those helps,
+		# but it is not enough on its own — see the scaling below.
 		picker.picker_shape = ColorPicker.SHAPE_HSV_RECTANGLE
 		picker.sampler_visible = false
 		picker.color_modes_visible = false
@@ -110,6 +117,28 @@ static func _add_color_row(parent: VBoxContainer, draft: Dictionary, repaint: Ca
 		picker.presets_visible = true
 		for hex in presets:
 			picker.add_preset(Color.from_string(hex, Color.WHITE))
+
+	# Shrink the popup by SCALING it, which is the only thing that works.
+	#
+	# The previous attempt set custom_minimum_size on the picker and did nothing,
+	# because that is a MINIMUM: a Control cannot be pushed below its natural size
+	# that way. The natural size here is genuinely tall — an HSV square plus the
+	# default theme's 16px font — so on a 360px-tall screen it filled the height
+	# and covered the diver preview it exists to preview.
+	#
+	# Sized in about_to_popup rather than now: the picker's combined minimum size
+	# is only meaningful once its children have laid out, and doing it per-open
+	# means a theme change can't leave a stale hardcoded size behind.
+	var popup := button.get_popup()
+	if popup != null:
+		popup.about_to_popup.connect(func() -> void:
+			popup.content_scale_factor = PICKER_SCALE
+			var want := Vector2.ZERO
+			if picker != null:
+				want = picker.get_combined_minimum_size() * PICKER_SCALE
+			popup.size = Vector2i(
+					maxi(int(want.x) + PICKER_PAD, PICKER_MIN_W),
+					maxi(int(want.y) + PICKER_PAD, PICKER_MIN_H)))
 
 	button.color_changed.connect(func(c: Color) -> void:
 		draft[key] = "#" + c.to_html(false)
