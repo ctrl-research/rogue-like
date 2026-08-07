@@ -1,15 +1,9 @@
 name: Signaling Image
 
+# Validation only. Publishing moved to release.yml, which builds and pushes a
+# versioned image on every merge to main — having both would mean two docker builds
+# per merge, and two things racing to move :latest.
 on:
-  push:
-    # Tags publish a versioned image; main keeps :latest moving.
-    tags:
-      - "v*"
-    branches:
-      - main
-    paths:
-      - "signaling/**"
-      - ".github/workflows/signaling-image.yml"
   pull_request:
     paths:
       - "signaling/**"
@@ -18,14 +12,13 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}/signaling
 
 jobs:
   build-push:
-    name: Build & push (amd64 + arm64)
+    name: Build (amd64 + arm64)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,36 +30,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Only log in when we intend to push (skipped on pull_request builds).
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Derive image tags
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          # A v0.1.0 tag yields :0.1.0 and :0.1, so a deployment can pin a version
-          # instead of chasing :latest. Every line inside the block below is a tag
-          # rule — there is no comment syntax in there.
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+          tags: type=sha,format=short
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: signaling
           platforms: linux/amd64,linux/arm64
-          # Build on PRs to validate the Dockerfile; only push on main / dispatch.
-          push: ${{ github.event_name != 'pull_request' }}
+          # Never pushes: this exists to prove the Dockerfile still builds.
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

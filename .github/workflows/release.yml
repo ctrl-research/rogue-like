@@ -1,84 +1,98 @@
 name: Release
 
-# Cuts a release from a v* tag: desktop binaries, a self-contained web bundle, and
-# a reference to the versioned signalling image.
+# Every merge to main is a release: desktop binaries, a self-contained web bundle,
+# and a versioned signalling image, all from the same commit.
 #
-# One repo-wide version rather than per-component versions, because the hub's
-# protocol and the client that speaks it ship from here together — a single number
-# makes "which hub works with which client" answerable. If the web frontend moves
-# to its own project later, it takes its own tags with it.
+# The version is DERIVED, not committed. MAJOR.MINOR comes from ./VERSION and the
+# patch is the commit count on main, so 0.1.42 is the 42nd commit of the 0.1 line.
+# Nothing is bumped by hand and nothing is pushed back to main — a release commit
+# that itself needs a version-bump commit is a loop, and pushing to a protected
+# branch from CI to close it is worse. Tags are created by the release itself,
+# which is a tag write rather than a branch write.
 #
-#   git tag v0.1.0 && git push --tags
+# Bump MINOR by editing ./VERSION in a normal PR.
 on:
   push:
-    tags:
-      - "v*"
-  # Dry run: builds and checks everything, publishes nothing.
+    branches:
+      - main
+  # Dry run: builds and verifies everything, publishes nothing.
   workflow_dispatch:
+
+concurrency:
+  # Queue rather than cancel: every merge should produce its release, in order.
+  group: release-main
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 env:
   GODOT_VERSION: "4.6.3"
+  IMAGE: ghcr.io/${{ github.repository }}/signaling
 
 jobs:
-  # Fail before building anything if the version fields disagree with the tag.
-  # A forgotten bump would otherwise ship three artifacts that disagree about
-  # what they are, and the in-game version would lie.
-  verify:
-    name: Verify version
+  version:
+    name: Compute version
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.check.outputs.version }}
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      publish: ${{ steps.v.outputs.publish }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history: the patch number is the commit count, and a shallow
+          # clone would silently make every release 0.1.1.
+          fetch-depth: 0
 
-      - name: Check tag against project.godot and package.json
-        id: check
+      - name: Derive version
+        id: v
         run: |
           set -euo pipefail
-          godot_version=$(sed -n 's/^config\/version="\(.*\)"$/\1/p' project.godot)
-          pkg_version=$(node -p "require('./signaling/package.json').version")
-          echo "project.godot:        $godot_version"
-          echo "signaling/package.json: $pkg_version"
+          base=$(tr -d ' \n\r' < VERSION)
+          case "$base" in
+            [0-9]*.[0-9]*) : ;;
+            *) echo "::error::VERSION must be MAJOR.MINOR, got '$base'"; exit 1 ;;
+          esac
+          count=$(git rev-list --count HEAD)
+          version="${base}.${count}"
 
-          if [ "$godot_version" != "$pkg_version" ]; then
-            echo "::error::project.godot ($godot_version) and signaling/package.json ($pkg_version) disagree"
-            exit 1
+          publish=true
+          if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
+            # A rerun of an already-released commit must not try to recreate its tag.
+            echo "::notice::v${version} already exists; building without publishing"
+            publish=false
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::notice::manual run; building without publishing"
+            publish=false
           fi
 
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            tag="${GITHUB_REF_NAME#v}"
-            echo "tag:                 $tag"
-            if [ "$tag" != "$godot_version" ]; then
-              echo "::error::tag v$tag does not match config/version=$godot_version — bump project.godot and signaling/package.json first"
-              exit 1
-            fi
-          else
-            echo "not a tag build (dry run); skipping the tag comparison"
-          fi
-          echo "version=$godot_version" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          echo "version $version  publish=$publish"
 
-  # Reuses the Desktop workflow rather than duplicating the export, so releases
-  # cannot drift from what CI already builds and checks on every PR.
   desktop:
     name: Desktop
-    needs: verify
+    needs: version
     uses: ./.github/workflows/desktop.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
 
   web:
     name: Web bundle
-    needs: verify
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Same setup as build.yml / desktop.yml. Duplicated rather than shared
-      # because build.yml also owns the Pages deployment and gates merges; keeping
-      # this separate means a release cannot break the merge gate.
+      # Same setup as build.yml. Duplicated rather than shared because build.yml
+      # owns the Pages deployment and gates merges; a release must not be able to
+      # break the merge gate.
       - name: Download Godot and export templates
         run: |
           set -euo pipefail
@@ -92,6 +106,9 @@ jobs:
           template_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
           mkdir -p "$template_dir"
           mv templates/* "$template_dir/"
+
+      - name: Stamp version
+        run: scripts/stamp_version.sh "${{ needs.version.outputs.version }}"
 
       - name: Export web
         run: |
@@ -109,13 +126,13 @@ jobs:
           fi
           echo "clean"
 
-      # A self-contained archive, so a release can be served from anywhere without
+      # Self-contained, so a release can be served from any static host without
       # rebuilding — which is what makes moving the frontend out later cheap.
       - name: Package
         run: |
           set -euo pipefail
           mkdir -p dist
-          (cd build/web && zip -qr "../../dist/AbyssalSalvage-web-${{ needs.verify.outputs.version }}.zip" .)
+          (cd build/web && zip -qr "../../dist/AbyssalSalvage-web-${{ needs.version.outputs.version }}.zip" .)
           ls -lh dist/
 
       - name: Upload web bundle
@@ -125,11 +142,51 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  image:
+    name: Signalling image
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stamp version
+        run: scripts/stamp_version.sh "${{ needs.version.outputs.version }}"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: needs.version.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Version tags exist so a deployment can pin something other than :latest.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: signaling
+          platforms: linux/amd64,linux/arm64
+          push: ${{ needs.version.outputs.publish == 'true' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.version.outputs.version }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   publish:
     name: Publish release
-    needs: [verify, desktop, web]
-    # Only a real tag publishes; workflow_dispatch stops after building.
-    if: github.ref_type == 'tag'
+    needs: [version, desktop, web, image]
+    if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -149,15 +206,20 @@ jobs:
           name: web-bundle
           path: dist
 
-      # gh is preinstalled, so publishing binaries involves no third-party action.
+      # gh is preinstalled, so publishing binaries pulls in no third-party action.
+      # `gh release create` creates the tag at --target, so there is no separate
+      # git push and nothing writes to a protected branch.
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.verify.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
           ls -lh dist/
           notes=$(cat <<NOTES
+          Built from \`${GITHUB_SHA}\`.
+
           ## Desktop
 
           Both builds are **unsigned**, so the OS warns on first launch:
@@ -172,12 +234,13 @@ jobs:
 
           **Direct connect needs no server at all.** One player picks HOST LAN, the
           others JOIN LAN with that machine's address. Over the internet the host
-          forwards UDP 7777 and shares their public address — only the **host** needs
-          to be reachable, so a player behind mobile data or CGNAT can still join.
+          forwards UDP 7777 and shares their public address — only the **host**
+          needs to be reachable, so a player behind mobile data or CGNAT can still
+          join.
 
           **Online room codes** go through the signalling hub and are peer-to-peer.
           Two peers that cannot reach each other directly (both behind one NAT, or
-          either on CGNAT) need a TURN relay configured on the hub — see
+          either on CGNAT) need a TURN relay on the hub — see
           \`signaling/README.md\`.
 
           ## Web
@@ -188,15 +251,15 @@ jobs:
           ## Signalling hub
 
           \`\`\`
-          ghcr.io/${GITHUB_REPOSITORY}/signaling:${VERSION}
+          ${IMAGE}:${VERSION}
           \`\`\`
 
-          Published by the Signaling Image workflow from this same tag. Pin this
-          rather than \`:latest\` so a client and hub of known-compatible versions
-          stay together.
+          Pin this rather than \`:latest\` so a client and hub of known-compatible
+          versions stay together.
           NOTES
           )
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --title "${GITHUB_REF_NAME}" \
+          gh release create "$TAG" dist/* \
+            --target "${GITHUB_SHA}" \
+            --title "$TAG" \
             --notes "$notes" \
-            --verify-tag
+            --prerelease
