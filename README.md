@@ -86,6 +86,29 @@ macOS bundle.
 `signaling-image.yml` publishes the broker container to GHCR on merges that
 touch `signaling/`.
 
+## Releases
+
+One repo-wide version, because the hub's protocol and the client that speaks it
+ship from here together — a single number makes "which hub works with which
+client" answerable. `project.godot`'s `config/version` is the source of truth.
+
+To cut one:
+
+```
+# bump config/version in project.godot AND version in signaling/package.json
+git tag v0.2.0 && git push --tags
+```
+
+`release.yml` then verifies the tag matches both version fields (and **refuses to
+publish** if not, before building anything), builds the desktop binaries by reusing
+`desktop.yml`, packages a self-contained web bundle, and publishes a GitHub release
+with all of it. `signaling-image.yml` publishes
+`ghcr.io/<repo>/signaling:<version>` from the same tag, so a deployment can pin a
+version instead of chasing `:latest`.
+
+`workflow_dispatch` on Release does a dry run: everything builds and gets checked,
+nothing is published.
+
 ## Desktop builds
 
 Grab them from the workflow artifacts (or a release, on tagged builds). **Both are

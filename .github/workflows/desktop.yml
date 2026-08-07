@@ -16,6 +16,9 @@ on:
       - "v*"
   pull_request:
   workflow_dispatch:
+  # Reusable, so release.yml builds desktop artifacts by calling this rather than
+  # duplicating the export logic.
+  workflow_call:
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -124,49 +127,3 @@ jobs:
           path: build/desktop/*
           if-no-files-found: error
           retention-days: 30
-
-  release:
-    name: Attach to release
-    needs: desktop
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download built artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-builds
-          path: build/desktop
-
-      # gh is preinstalled on the runner, so no third-party action is involved in
-      # publishing binaries.
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          notes=$(cat <<'NOTES'
-          Desktop builds of Abyssal Salvage.
-
-          **Both are unsigned**, so the OS will warn on first launch:
-
-          - **macOS** — unzip, then right-click the app and choose *Open* (or
-            `xattr -dr com.apple.quarantine AbyssalSalvage.app`). Double-clicking
-            it the normal way will be refused.
-          - **Windows** — SmartScreen will warn; choose *More info* then
-            *Run anyway*.
-
-          **Playing together without any server:** one player picks HOST LAN, the
-          others JOIN LAN with that machine's address. Over the internet the host
-          forwards UDP 7777 and shares their public address — only the host needs
-          to be reachable, so a player behind mobile data or CGNAT can still join.
-          Online room codes work too, via the signalling hub.
-          NOTES
-          )
-          gh release create "$tag" build/desktop/* --title "$tag" --notes "$notes" \
-            || gh release upload "$tag" build/desktop/* --clobber
