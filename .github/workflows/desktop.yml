@@ -1,0 +1,172 @@
+name: Desktop
+
+# Desktop builds for macOS and Windows, in their own workflow so they cannot slow
+# down or destabilise the Build workflow that gates merges.
+#
+# Why they exist: the browser build cannot connect two peers behind CGNAT without
+# a relay, but a desktop build can dial a host directly (HOST LAN / JOIN LAN on
+# UDP 7777) and only needs ONE side reachable. That path touches no signalling hub
+# and no TURN server. Desktop also gets online room codes, since the WebRTC
+# extension ships a macOS universal framework and a Windows x86_64 dll.
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with .github/workflows/build.yml.
+  GODOT_VERSION: "4.6.3"
+
+jobs:
+  desktop:
+    name: Export Desktop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Same setup as the Build workflow: the export templates archive contains
+      # every platform, so macOS and Windows need no extra download.
+      - name: Download Godot and export templates
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" godot
+          chmod +x godot
+
+          unzip -q templates.tpz
+          template_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$template_dir"
+          mv templates/* "$template_dir/"
+
+      # Required here, unlike in the Build workflow where it is best-effort.
+      # Without the extension a desktop build silently loses online play, which
+      # is a downgrade that should fail the build rather than ship.
+      - name: Fetch WebRTC extension
+        run: |
+          set -euo pipefail
+          bash scripts/fetch_webrtc.sh
+          test -f addons/webrtc/webrtc_native.gdextension \
+            || { echo "::error::webrtc-native missing; desktop builds would lose online play"; exit 1; }
+          # The desktop presets must ship the platform libraries themselves.
+          for lib in \
+            "addons/webrtc/lib/libwebrtc_native.macos.template_release.universal.framework" \
+            "addons/webrtc/lib/libwebrtc_native.windows.template_release.x86_64.dll"; do
+            test -e "$lib" || { echo "::error::missing $lib"; exit 1; }
+          done
+
+      - name: Import project
+        run: ./godot --headless --path . --import 2>&1 | tee -a desktop.log
+
+      - name: Export macOS
+        run: |
+          set -euo pipefail
+          mkdir -p build/desktop
+          ./godot --headless --path . --export-release "macOS" \
+            "build/desktop/AbyssalSalvage-macos.zip" 2>&1 | tee -a desktop.log
+          test -s "build/desktop/AbyssalSalvage-macos.zip"
+
+      - name: Export Windows
+        run: |
+          set -euo pipefail
+          ./godot --headless --path . --export-release "Windows" \
+            "build/desktop/AbyssalSalvage-windows.exe" 2>&1 | tee -a desktop.log
+          test -s "build/desktop/AbyssalSalvage-windows.exe"
+
+      # A Godot export exits 0 even when scripts fail to compile, so success
+      # alone does not mean these builds are healthy.
+      - name: Verify no GDScript parse / autoload / shader errors
+        run: |
+          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|Failed to create an autoload|does not inherit from|SHADER ERROR|Shader compilation failed" desktop.log; then
+            echo "::error::GDScript parse, autoload or shader errors detected during export (see matches above)."
+            exit 1
+          fi
+          echo "No GDScript parse/autoload/shader errors detected."
+
+      # Sanity-check the artifacts rather than trusting a zero exit: an export
+      # that silently produced a stub would still pass `test -s`.
+      - name: Inspect artifacts
+        run: |
+          set -euo pipefail
+          ls -lh build/desktop/
+          mac_bytes=$(stat -c%s build/desktop/AbyssalSalvage-macos.zip)
+          win_bytes=$(stat -c%s build/desktop/AbyssalSalvage-windows.exe)
+          echo "macos zip: $mac_bytes bytes, windows exe: $win_bytes bytes"
+          # Both should be tens of MB; a few hundred KB means the template or the
+          # pck did not make it in.
+          test "$mac_bytes" -gt 10000000 || { echo "::error::macOS zip is implausibly small"; exit 1; }
+          test "$win_bytes" -gt 10000000 || { echo "::error::Windows exe is implausibly small"; exit 1; }
+          # The .app must carry the WebRTC framework, or online play is gone and
+          # only LAN works — the exact silent downgrade this workflow guards.
+          unzip -l build/desktop/AbyssalSalvage-macos.zip | grep -q "webrtc_native" \
+            || { echo "::error::macOS build has no webrtc-native; online play would be dead"; exit 1; }
+          echo "artifacts look sane"
+
+      - name: Upload desktop builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-builds
+          path: build/desktop/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach to release
+    needs: desktop
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-builds
+          path: build/desktop
+
+      # gh is preinstalled on the runner, so no third-party action is involved in
+      # publishing binaries.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          notes=$(cat <<'NOTES'
+          Desktop builds of Abyssal Salvage.
+
+          **Both are unsigned**, so the OS will warn on first launch:
+
+          - **macOS** — unzip, then right-click the app and choose *Open* (or
+            `xattr -dr com.apple.quarantine AbyssalSalvage.app`). Double-clicking
+            it the normal way will be refused.
+          - **Windows** — SmartScreen will warn; choose *More info* then
+            *Run anyway*.
+
+          **Playing together without any server:** one player picks HOST LAN, the
+          others JOIN LAN with that machine's address. Over the internet the host
+          forwards UDP 7777 and shares their public address — only the host needs
+          to be reachable, so a player behind mobile data or CGNAT can still join.
+          Online room codes work too, via the signalling hub.
+          NOTES
+          )
+          gh release create "$tag" build/desktop/* --title "$tag" --notes "$notes" \
+            || gh release upload "$tag" build/desktop/* --clobber

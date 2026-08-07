@@ -273,6 +273,13 @@ terrain are untouched by it.
   same four hexes: see `docs/sprite-palette.md`. Emotes (issue #39) build on
   the same per-peer profile and land next.
 
+- **M12 — this PR** — desktop builds for macOS and Windows. Motivated by
+  multiplayer rather than by platform reach: the browser build cannot connect two
+  peers behind CGNAT without a relay, while a desktop build can dial a
+  port-forwarded host directly on UDP 7777, which needs only ONE side reachable
+  and no relay at all. Desktop also keeps online room codes, since the WebRTC
+  extension ships a macOS universal framework and a Windows x86_64 dll.
+
 ## Backlog (post-M6)
 
 ### Content
