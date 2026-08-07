@@ -10,9 +10,18 @@
 
 const crypto = require("crypto");
 
-// Short by design: a leaked credential is only useful until it expires, and a
-// lobby only needs one long enough to finish the handshake.
-const DEFAULT_TTL_SEC = 600;
+// Long enough to outlast a session, NOT just the handshake.
+//
+// I first set this to 600s reasoning that a credential only needs to survive the
+// offer/answer exchange. That is wrong: coturn checks the expiry when refreshing
+// an allocation as well as when creating one, so a credential that expires
+// mid-dive takes the relayed player's connection with it. The symptom would be
+// relayed players dropping after a suspiciously consistent interval.
+//
+// Abuse is bounded by coturn's quotas rather than by a short window here — see
+// user-quota / total-quota in signaling/README.md. Managed providers use the same
+// shape: Twilio issues 1-24h credentials.
+const DEFAULT_TTL_SEC = 8 * 60 * 60;
 const DEFAULT_STUN = ["stun:stun.l.google.com:19302"];
 
 /**

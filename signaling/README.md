@@ -60,7 +60,7 @@ relay ships in the game build**:
 ```
 TURN_URLS=turn:turn.example:3478,turns:turn.example:5349
 TURN_SECRET=<the same string as coturn's static-auth-secret>
-TURN_TTL_SEC=600           # optional, default 600
+TURN_TTL_SEC=28800         # optional, default 8h
 STUN_URLS=stun:...         # optional, defaults to Google's
 ```
 
