@@ -66,6 +66,15 @@ jobs:
       - name: Sprite palette drift check
         run: python3 tests/palette_check.py
 
+      # Node-side, no Godot needed. The relay credential HMAC has to match what
+      # coturn computes byte for byte, and a wrong one fails in the least helpful
+      # way there is: the relay refuses every allocation, so the game looks
+      # exactly as it did with no relay at all.
+      - name: Signaling TURN credential test
+        run: |
+          set -euo pipefail
+          node signaling/ice_test.js
+
       - name: Station meta-progression unit test
         run: |
           set -euo pipefail

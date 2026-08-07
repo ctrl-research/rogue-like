@@ -24,6 +24,11 @@ var _active := false
 var _join_sent := false
 var _room_to_join := ""
 var _pending_peers: Array[int] = []  # peer_connects that arrived before "id"
+## ICE servers the hub handed us on join, which is where a TURN relay comes from.
+## Relay credentials cannot ship in the build — an exported web game is readable
+## by anyone who opens it — so the hub mints short-lived ones per join and we use
+## whatever it sends, falling back to the project setting when it sends nothing.
+var _hub_ice: Array = []
 # Handshake telemetry. We used to log only the descriptions we SENT, which is
 # why a browser report could show a completed offer/answer exchange and still
 # leave the interesting part — did the answer arrive, did candidates flow, what
@@ -67,6 +72,33 @@ static func ice_servers() -> Array:
 	return DEFAULT_ICE
 
 
+## What this session actually hands to WebRTC: the hub's list when it sent one,
+## otherwise the locally configured fallback. Kept separate from ice_servers() so
+## the static fallback stays testable on its own.
+func effective_ice() -> Array:
+	return _hub_ice if not _hub_ice.is_empty() else ice_servers()
+
+
+## How many entries offer a relay. Logged on join because "is TURN actually in
+## play" is otherwise only answerable by watching for relay candidates later, and
+## a misconfigured hub looks identical to no hub configuration at all.
+static func _relay_count(servers: Array) -> int:
+	var count := 0
+	for entry in servers:
+		if not entry is Dictionary:
+			continue
+		var urls: Variant = (entry as Dictionary).get("urls", [])
+		var joined := ""
+		if urls is Array:
+			for url in urls:
+				joined += str(url) + " "
+		else:
+			joined = str(urls)
+		if joined.contains("turn:") or joined.contains("turns:"):
+			count += 1
+	return count
+
+
 ## Connect to the broker. Empty room code = create a room and host it.
 func start(room: String) -> Error:
 	stop()
@@ -83,6 +115,7 @@ func stop() -> void:
 	_active = false
 	_join_sent = false
 	room_code = ""
+	_hub_ice = []
 	if _ws.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		_ws.close()
 	_ws = WebSocketPeer.new()
@@ -128,6 +161,13 @@ func _handle(raw: String) -> void:
 		return
 	match str(msg.type):
 		"id":
+			# Read before create_mesh so the very first peer already has the relay:
+			# peer connections are built from these, and a peer created without
+			# them would silently be the one connection with no route.
+			var offered: Variant = msg.get("ice", [])
+			_hub_ice = offered if offered is Array else []
+			print("[signaling] hub offered %d ice server(s), %d relay" % [
+					_hub_ice.size(), _relay_count(_hub_ice)])
 			rtc = WebRTCMultiplayerPeer.new()
 			rtc.create_mesh(int(msg.id))
 			room_code = str(msg.room)
@@ -181,7 +221,7 @@ func _create_peer(id: int) -> void:
 	if rtc == null:
 		return
 	var pc := WebRTCPeerConnection.new()
-	var err := pc.initialize({"iceServers": ice_servers()})
+	var err := pc.initialize({"iceServers": effective_ice()})
 	if err != OK:
 		failed.emit("WebRTC is unavailable on this platform.")
 		return

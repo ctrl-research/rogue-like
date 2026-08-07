@@ -29,7 +29,7 @@
  *     {type:"seal"}                     host only: lock the room (no more joins)
  *     {type:"unseal"}                   host only: reopen the room (post-game lobby)
  *   server -> client:
- *     {type:"id", id:<your id>, room:"<CODE>", host:<bool>}
+ *     {type:"id", id:<your id>, room:"<CODE>", host:<bool>, ice:[<ice servers>]}
  *     {type:"peer_connect", id:<peer>} / {type:"peer_disconnect", id:<peer>}
  *     {type:"offer"|"answer"|"candidate", id:<source peer>, ...payload}   (relayed)
  *     {type:"seal"} / {type:"error", reason:"<code>"}
@@ -61,6 +61,48 @@ const HEARTBEAT_MS = intEnv("HEARTBEAT_MS", 30000);
 // origin (native clients send no Origin and are always allowed).
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .split(",").map((s) => s.trim()).filter(Boolean);
+
+// --- TURN credentials ---
+// A relay's credentials cannot be a secret in a browser game: everything shipped
+// in an exported web build is readable by whoever opens it. So the hub mints
+// SHORT-LIVED credentials instead of shipping standing ones. The username is an
+// expiry timestamp plus a random tag, the password is its HMAC under a secret the
+// hub never sends anywhere. coturn validates with the same secret
+// (use-auth-secret / static-auth-secret) and needs no user database at all.
+//
+// This is the TURN REST API scheme (draft-uberti-behave-turn-rest-00), which is
+// what coturn implements. Leave TURN_SECRET unset and the hub simply sends no
+// relay, and clients fall back to their own configured ICE servers.
+const TURN_URLS = (process.env.TURN_URLS || "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+const TURN_SECRET = process.env.TURN_SECRET || "";
+// Short by design: a leaked credential is only useful until it expires, and a
+// lobby only needs one long enough to finish the handshake.
+const TURN_TTL_SEC = intEnv("TURN_TTL_SEC", 600);
+const STUN_URLS = (process.env.STUN_URLS || "stun:stun.l.google.com:19302")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+
+// Exported for the unit test: the HMAC has to match byte for byte what coturn
+// computes, and there is no way to eyeball that.
+function turnCredentials(secret, ttlSec, nowMs, tag) {
+  const expiry = Math.floor(nowMs / 1000) + ttlSec;
+  // The random tag gives each peer a distinct TURN username, so coturn's
+  // per-user quotas apply per peer rather than to everyone sharing a TTL window.
+  const username = `${expiry}:${tag}`;
+  const credential = crypto.createHmac("sha1", secret).update(username).digest("base64");
+  return { username, credential };
+}
+
+function iceServers() {
+  const servers = [];
+  if (STUN_URLS.length) servers.push({ urls: STUN_URLS });
+  if (TURN_URLS.length && TURN_SECRET) {
+    const { username, credential } = turnCredentials(
+      TURN_SECRET, TURN_TTL_SEC, Date.now(), crypto.randomBytes(4).toString("hex"));
+    servers.push({ urls: TURN_URLS, username, credential });
+  }
+  return servers;
+}
 
 const HOST_ID = 1;
 const ROOM_CODE_LENGTH = 5;
@@ -156,7 +198,7 @@ function handleJoin(ws, msg) {
     room.peers.set(HOST_ID, ws);
     clearTimeout(ws.joinTimer);
     // Clients only ever see the bare code; the namespace is server-side.
-    send(ws, { type: "id", id: HOST_ID, room: code, host: true });
+    send(ws, { type: "id", id: HOST_ID, room: code, host: true, ice: iceServers() });
     log(`room ${key} created by host (${rooms.size} rooms)`);
     return;
   }
@@ -176,7 +218,7 @@ function handleJoin(ws, msg) {
   // on "id", so any peer_connect arriving before it would be dropped and the
   // handshake would never start. (Iterating room.peers before adding the
   // newcomer also means it never gets a peer_connect for itself.)
-  send(ws, { type: "id", id, room: requested, host: false });
+  send(ws, { type: "id", id, room: requested, host: false, ice: iceServers() });
   for (const [otherId, otherWs] of room.peers) {
     send(ws, { type: "peer_connect", id: otherId });
     send(otherWs, { type: "peer_connect", id });
@@ -369,15 +411,29 @@ const heartbeat = setInterval(() => {
   }
 }, HEARTBEAT_MS);
 wss.on("close", () => clearInterval(heartbeat));
+// unref so this timer alone cannot hold the process open: the unit test requires
+// this file for the credential helpers, and without this it would never exit.
+// The listening socket keeps the loop alive in normal operation, so the heartbeat
+// still fires exactly as before.
+if (heartbeat.unref) heartbeat.unref();
 
 // Keep the broker alive through unexpected errors (a process manager / Docker
 // restart policy is still recommended as a backstop).
 process.on("uncaughtException", (err) => log(`uncaughtException: ${err && err.stack ? err.stack : err}`));
 process.on("unhandledRejection", (err) => log(`unhandledRejection: ${err}`));
 
-server.listen(PORT, () => {
-  log(`signaling server listening on :${PORT}`);
-  log(`limits: ${MAX_PEERS} peers/room, ${MAX_ROOMS} rooms, ${MAX_CONNECTIONS_PER_IP} conns/ip, ` +
-    `${MAX_MESSAGES_PER_SEC} msgs/s, ${MAX_MESSAGE_BYTES}B/msg, join timeout ${JOIN_TIMEOUT_MS}ms`);
-  log(`allowed origins: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(", ") : "(any)"}`);
-});
+// Only listen when run directly, so the unit test can require this file for the
+// credential helpers without binding a port and hanging the test run.
+if (require.main === module) {
+  server.listen(PORT, () => {
+    log(`signaling server listening on :${PORT}`);
+    log(`limits: ${MAX_PEERS} peers/room, ${MAX_ROOMS} rooms, ${MAX_CONNECTIONS_PER_IP} conns/ip, ` +
+      `${MAX_MESSAGES_PER_SEC} msgs/s, ${MAX_MESSAGE_BYTES}B/msg, join timeout ${JOIN_TIMEOUT_MS}ms`);
+    log(`allowed origins: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(", ") : "(any)"}`);
+    log(`relay: ${TURN_URLS.length && TURN_SECRET
+      ? `${TURN_URLS.join(", ")} (ephemeral creds, ${TURN_TTL_SEC}s)`
+      : "none configured — set TURN_URLS and TURN_SECRET to hand out a relay"}`);
+  });
+}
+
+module.exports = { turnCredentials, iceServers };
