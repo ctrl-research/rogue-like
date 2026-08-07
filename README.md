@@ -88,26 +88,41 @@ touch `signaling/`.
 
 ## Releases
 
-One repo-wide version, because the hub's protocol and the client that speaks it
-ship from here together — a single number makes "which hub works with which
-client" answerable. `project.godot`'s `config/version` is the source of truth.
+**Every merge to main is a release.** Desktop binaries, a self-contained web
+bundle, and a versioned signalling image, all built from the same commit by
+`release.yml`.
 
-To cut one:
+The version is **derived, not committed**: `MAJOR.MINOR` comes from `./VERSION`
+and the patch is the commit count on main, so `0.1.114` is the 114th commit of the
+`0.1` line. Nothing is bumped by hand — a release commit that itself needs a
+version-bump commit is a loop, and pushing to a protected branch from CI to close
+it is worse. `scripts/stamp_version.sh` writes the real version into
+`project.godot` and `signaling/package.json` **in the build workspace only**; the
+committed values stay at `-dev`, which is what you see running from source.
 
-```
-# bump config/version in project.godot AND version in signaling/package.json
-git tag v0.2.0 && git push --tags
-```
+Tags are created by the release itself (`gh release create --target`), which is a
+tag write rather than a branch write, so branch protection is untouched.
 
-`release.yml` then verifies the tag matches both version fields (and **refuses to
-publish** if not, before building anything), builds the desktop binaries by reusing
-`desktop.yml`, packages a self-contained web bundle, and publishes a GitHub release
-with all of it. `signaling-image.yml` publishes
-`ghcr.io/<repo>/signaling:<version>` from the same tag, so a deployment can pin a
-version instead of chasing `:latest`.
+To bump `MINOR`, edit `./VERSION` in a normal PR. Releases are marked
+**prerelease** until there is a reason not to.
 
-`workflow_dispatch` on Release does a dry run: everything builds and gets checked,
-nothing is published.
+| Artifact | Where |
+| --- | --- |
+| macOS `.zip` + Windows `.exe` | GitHub release |
+| Self-contained web bundle `.zip` | GitHub release |
+| `ghcr.io/<repo>/signaling:<version>` and `:latest` | GHCR |
+
+Pin the versioned image tag in a deployment rather than chasing `:latest`, so a
+client and hub of known-compatible versions stay together.
+
+`workflow_dispatch` on Release is a dry run: everything builds and gets verified,
+nothing publishes. Same if a rerun lands on a commit that was already released.
+
+**Desktop builds do not run on pull requests** — they take a few minutes and
+produce ~165MB, which is wasted per-PR when the artifact is only wanted for a
+release. The trade-off is that a broken export preset surfaces on the next merge
+rather than on the PR; `build.yml` still checks on every PR that scripts compile
+and that an export succeeds.
 
 ## Desktop builds
 

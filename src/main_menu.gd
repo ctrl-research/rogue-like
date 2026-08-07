@@ -75,6 +75,16 @@ func _build() -> void:
 	subtitle.modulate = Color(0.5, 0.62, 0.72)
 	box.add_child(subtitle)
 
+	# The build version, stamped by CI (scripts/stamp_version.sh). Worth showing:
+	# releases now happen on every merge, so "what are you running?" is a question
+	# that actually comes up, and a player can answer it from the title screen.
+	var build := Label.new()
+	build.text = "v%s" % str(ProjectSettings.get_setting("application/config/version", "dev"))
+	build.add_theme_font_size_override("font_size", 8)
+	build.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	build.modulate = Color(0.4, 0.5, 0.6)
+	box.add_child(build)
+
 	_summary = Label.new()
 	_summary.add_theme_font_size_override("font_size", 8)
 	_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

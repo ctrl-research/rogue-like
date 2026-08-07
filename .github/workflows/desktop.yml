@@ -8,17 +8,23 @@ name: Desktop
 # UDP 7777) and only needs ONE side reachable. That path touches no signalling hub
 # and no TURN server. Desktop also gets online room codes, since the WebRTC
 # extension ships a macOS universal framework and a Windows x86_64 dll.
+# Only ever runs as part of a release, or manually. Deliberately NOT on pushes or
+# pull requests: these exports take a few minutes and produce ~165MB of binaries,
+# which is wasted on every PR when the artifact is only wanted for a release.
+#
+# The trade-off is that a broken export preset would not surface on a PR. It
+# surfaces on the next merge instead, since every merge to main releases — so the
+# blast radius is one merge, not one distant tag. The Build workflow still checks
+# on every PR that scripts compile and that an export succeeds.
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
-  pull_request:
   workflow_dispatch:
-  # Reusable, so release.yml builds desktop artifacts by calling this rather than
-  # duplicating the export logic.
   workflow_call:
+    inputs:
+      version:
+        description: "Version to stamp into the build (e.g. 0.1.42)"
+        required: false
+        type: string
+        default: "0.0.0-dev"
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -72,6 +78,9 @@ jobs:
             "addons/webrtc/lib/libwebrtc_native.windows.template_release.x86_64.dll"; do
             test -e "$lib" || { echo "::error::missing $lib"; exit 1; }
           done
+
+      - name: Stamp version
+        run: scripts/stamp_version.sh "${{ inputs.version || '0.0.0-dev' }}"
 
       - name: Import project
         run: ./godot --headless --path . --import 2>&1 | tee -a desktop.log
