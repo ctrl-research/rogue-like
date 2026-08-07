@@ -39,7 +39,27 @@ godot --path . --editor   # open the editor
   `SIGNALING_URL` env var, e.g. `ws://localhost:9080` with `node
   signaling/server.js` running). Desktop builds additionally need the
   webrtc-native extension: `scripts/fetch_webrtc.sh`.
-- **LAN co-op (desktop)** — ENet fallback: host on port 7777, join by IP.
+- **Direct connect (desktop)** — HOST LAN / JOIN LAN, ENet on UDP 7777, no
+  signalling hub and no relay involved. Works on a LAN as-is; over the internet
+  the host forwards UDP 7777 and shares their public address. **Only the host
+  needs to be reachable**, which is why this works for a player on mobile data or
+  CGNAT when peer-to-peer does not — see below.
+
+### Why the browser build needs a relay and desktop does not
+
+Measured, not assumed:
+
+| Peers | Result |
+| --- | --- |
+| Two browsers behind one NAT | fails — needs router hairpinning, and Chrome hides host candidates behind mDNS |
+| Browser on home broadband to browser on mobile data | fails — mobile is CGNAT, so the address STUN reports is not reachable |
+| Two desktop clients on one LAN | works — real local IPs, no traversal at all |
+| Desktop direct connect, host port-forwarded | works — outbound always works from behind CGNAT |
+
+Peer-to-peer needs **both** sides traversable; direct connect needs only one.
+A TURN relay exists to be that one reachable endpoint, which is why the browser
+build needs one (a browser cannot listen for connections) and a forwarded desktop
+host does not. See `signaling/README.md` for the relay setup.
 
 ## CI / deployment
 
@@ -55,8 +75,30 @@ Every PR also runs two gameplay tests headlessly:
 - `scripts/e2e_webrtc.sh` — a real two-instance WebRTC session through the
   actual signaling broker, verifying spawn + replication on both sides.
 
+`desktop.yml` exports macOS (universal) and Windows (x86_64) builds, uploads them
+as workflow artifacts, and attaches them to a GitHub release on a `v*` tag. It is
+a separate workflow so desktop exports cannot slow down or destabilise the checks
+that gate merges. Unlike `build.yml`, it treats the webrtc-native extension as
+**required** and fails if it is missing — a desktop build without it silently
+loses online play, and it also asserts the framework actually made it into the
+macOS bundle.
+
 `signaling-image.yml` publishes the broker container to GHCR on merges that
 touch `signaling/`.
+
+## Desktop builds
+
+Grab them from the workflow artifacts (or a release, on tagged builds). **Both are
+unsigned**, so the OS warns on first launch:
+
+- **macOS** — unzip, then right-click the app and choose *Open*, or
+  `xattr -dr com.apple.quarantine AbyssalSalvage.app`. Double-clicking normally
+  will be refused.
+- **Windows** — SmartScreen warns; *More info* then *Run anyway*. The `.pck` is
+  embedded, so it is a single `.exe`.
+
+Signing would remove the warnings but needs an Apple Developer account and a
+Windows code-signing certificate; neither is worth it for a hobby build.
 
 ## Placeholder art
 
