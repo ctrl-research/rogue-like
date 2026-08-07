@@ -78,7 +78,7 @@ whoever opens it. The hub issues a username of `<expiry>:<random tag>` with the
 password being its HMAC under `TURN_SECRET`, which coturn validates using the same
 secret and no user database — the TURN REST API scheme
 (`draft-uberti-behave-turn-rest-00`). `TURN_SECRET` never leaves the hub.
-`signaling/ice_test.js` pins the HMAC to a fixed vector, because getting it wrong
+`signaling/ice_test.js` (which needs no `npm install`) pins the HMAC to a fixed vector, because getting it wrong
 fails invisibly: the relay refuses every allocation and the game looks exactly as
 it did with no relay at all.
 
