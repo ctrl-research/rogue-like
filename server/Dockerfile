@@ -26,6 +26,9 @@ USER abyssal
 # Godot writes its user:// data here; a writable HOME keeps it out of /.
 ENV HOME=/home/abyssal
 ENV PORT=9100
+# Empty means an OPEN server: anyone who can reach it can join. Set this for
+# anything publicly reachable.
+ENV JOIN_PASSWORD=""
 EXPOSE 9100
 
 # --headless: no display. The `--` separates Godot's own args from the game's, and

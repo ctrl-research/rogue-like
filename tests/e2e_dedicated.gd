@@ -22,6 +22,9 @@ extends Node
 
 const SERVER_PORT := 9155
 const START_DEPTH := 1
+## The server runs WITH a password, so the happy path exercises authentication
+## rather than only the open case. The intruder role presents a wrong one.
+const PASSWORD := "correct-horse"
 
 var role := "server"
 
@@ -34,6 +37,13 @@ var _dive_requested := false
 func _ready() -> void:
 	# `role` is set by tests/e2e_dedicated_boot.gd before this is added to /root.
 	Net.status_changed.connect(func(t: String) -> void: print("[%s] %s" % [role, t]))
+	if role == "intruder":
+		# Refusal is the pass condition here. Godot drops an unauthenticated peer
+		# before it is ever "connected", so this can never have sent an RPC.
+		Net.failed_to_join.connect(func() -> void:
+			print("[intruder] refused, as it should be")
+			print("E2E_INTRUDER_REFUSED")
+			get_tree().quit(0))
 	Net.entered_lobby.connect(func(_r: String, _h: bool) -> void:
 		get_tree().change_scene_to_file(Net.SUB_SCENE))
 
@@ -47,7 +57,8 @@ func _ready() -> void:
 		Station.profile = Appearance.sanitize({
 			"name": role, "suit": "#3fa9d9" if role == "lead" else "#d94f3d"})
 		Station.dive_depth = START_DEPTH
-		Net.join_server("ws://127.0.0.1:%d" % SERVER_PORT)
+		Net.join_server("ws://127.0.0.1:%d" % SERVER_PORT,
+				PASSWORD if role != "intruder" else "wrong-password")
 
 
 func _process(delta: float) -> void:

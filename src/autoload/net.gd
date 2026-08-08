@@ -18,12 +18,15 @@ signal status_changed(text: String)
 signal player_count_changed
 signal entered_lobby(room_code: String, is_host: bool)
 signal session_ended  # emitted when the session dies while sitting in a menu/lobby
+signal failed_to_join  # authentication refused, so the menu can say so
 
 enum Mode { OFFLINE, ENET, WEBRTC, WEBSOCKET }
 
 const DEFAULT_PORT := 7777
 const SERVER_PORT := 9100  # dedicated server; ENet LAN keeps 7777
 const DEFAULT_SERVER_URL := "ws://localhost:9100"
+## How long a joining peer has to prove it knows the password before being dropped.
+const AUTH_TIMEOUT := 5.0
 const MAX_PLAYERS := 4
 const GAME_SCENE := "res://scenes/game.tscn"
 const MENU_SCENE := "res://scenes/main_menu.tscn"
@@ -44,6 +47,9 @@ var _crew := 1
 ## server, so the diver who starts the dive sends their own winch depth and the
 ## server runs with it — see request_dive.
 var requested_depth := 1
+## Password this client will present when joining. Not persisted: a lobby
+## password is something you are told, and writing it to disk buys little.
+var _join_password := ""
 
 
 func _ready() -> void:
@@ -64,6 +70,10 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
+	if multiplayer is SceneMultiplayer:
+		var sm := multiplayer as SceneMultiplayer
+		sm.peer_authenticating.connect(_on_peer_authenticating)
+		sm.peer_authentication_failed.connect(_on_peer_authentication_failed)
 
 
 func webrtc_available() -> bool:
@@ -90,6 +100,19 @@ static func dedicated_port() -> int:
 	if env_port.is_valid_int():
 		return int(env_port)
 	return SERVER_PORT
+
+
+## The password this server requires, or "" for an open server.
+##
+## Configurable with an empty default on purpose: a server on a LAN or behind a
+## tunnel you control needs none, and a publicly reachable one does.
+static func server_password() -> String:
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--password")
+	if at != -1 and at + 1 < args.size():
+		return args[at + 1]
+	return OS.get_environment("JOIN_PASSWORD")
+
 
 
 ## Where clients dial. Env override for tests, then the project setting.
@@ -198,8 +221,10 @@ func host_dedicated(port: int = SERVER_PORT) -> Error:
 	multiplayer.multiplayer_peer = peer
 	mode = Mode.WEBSOCKET
 	is_online = true
-	print("[server] listening on ws://0.0.0.0:%d — one lobby, up to %d divers"
-			% [port, MAX_PLAYERS])
+	_arm_auth(server_password())
+	print("[server] listening on ws://0.0.0.0:%d — one lobby, up to %d divers, %s"
+			% [port, MAX_PLAYERS, "password required"
+			if not server_password().is_empty() else "OPEN (no password)"])
 	status_changed.emit("Listening on port %d." % port)
 	_refresh_crew()
 	# The server boards the sub too: sub.gd owns the roster and the dive hatch. It
@@ -214,8 +239,12 @@ func host_dedicated(port: int = SERVER_PORT) -> Error:
 
 
 ## A diver joining the dedicated server.
-func join_server(url: String = "") -> Error:
+func join_server(url: String = "", password: String = "") -> Error:
 	_reset_peer()
+	_join_password = password
+	# Always armed on the client: when the server needs no password this costs
+	# nothing, because peer_authenticating never fires.
+	_arm_auth("")
 	var target := url.strip_edges()
 	if target.is_empty():
 		target = server_url()
@@ -327,6 +356,54 @@ func _rpc_room_closed() -> void:
 func leave() -> void:
 	_reset_peer()
 	get_tree().change_scene_to_file(MENU_SCENE)
+
+
+# --- Join authentication -----------------------------------------------------
+## Godot's own SceneMultiplayer authentication, not a password check inside an RPC.
+##
+## The distinction is the whole point: a peer that has not authenticated is not
+## CONNECTED, so it cannot send a single RPC. Checking a password inside an @rpc
+## would mean the unauthenticated peer had already been able to call that one — and
+## everything else reachable from any_peer.
+func _arm_auth(required: String) -> void:
+	var sm := multiplayer as SceneMultiplayer
+	if sm == null:
+		return
+	sm.auth_timeout = AUTH_TIMEOUT
+	if not multiplayer.is_server():
+		# The client accepts the server once it answers. Both sides have to
+		# complete, or the connection never finishes establishing.
+		sm.auth_callback = func(id: int, _data: PackedByteArray) -> void:
+			sm.complete_auth(id)
+		return
+	if required.is_empty():
+		sm.auth_callback = Callable()  # open server: no auth step at all
+		return
+	sm.auth_callback = func(id: int, data: PackedByteArray) -> void:
+		# Compared as bytes, and never logged. A wrong password is dropped rather
+		# than answered, so a prober learns nothing beyond "no".
+		if data == required.to_utf8_buffer():
+			sm.send_auth(id, "ok".to_utf8_buffer())
+			sm.complete_auth(id)
+		else:
+			push_warning("peer %d failed authentication" % id)
+			sm.disconnect_peer(id)
+
+
+func _on_peer_authenticating(id: int) -> void:
+	if multiplayer.is_server():
+		return  # the server waits to be told; it does not ask
+	var sm := multiplayer as SceneMultiplayer
+	if sm != null:
+		sm.send_auth(id, _join_password.to_utf8_buffer())
+
+
+func _on_peer_authentication_failed(_id: int) -> void:
+	if multiplayer.is_server():
+		return
+	status_changed.emit("Wrong password for that server.")
+	failed_to_join.emit()
+
 
 
 ## How many clients may be connected at once.

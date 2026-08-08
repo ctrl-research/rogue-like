@@ -35,8 +35,10 @@ trap cleanup EXIT
 echo "--- starting dedicated server"
 # --dedicated goes after `--` so it lands in OS.get_cmdline_user_args(), which is
 # exactly how the container invokes it.
-E2E_ROLE=server with_timeout 150 "$GODOT" --headless --path . tests/e2e_dedicated.tscn \
-  -- --dedicated > "$OUT_DIR/server.log" 2>&1 &
+# JOIN_PASSWORD makes the happy path exercise authentication rather than only the
+# open-server case. It must match PASSWORD in tests/e2e_dedicated.gd.
+JOIN_PASSWORD=correct-horse E2E_ROLE=server with_timeout 150 "$GODOT" --headless --path . \
+  tests/e2e_dedicated.tscn -- --dedicated > "$OUT_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 30); do
@@ -56,11 +58,17 @@ E2E_ROLE=follower with_timeout 120 "$GODOT" --headless --path . tests/e2e_dedica
   > "$OUT_DIR/follower.log" 2>&1 &
 FOLLOWER_PID=$!
 
+# An intruder with the wrong password must be refused. Run it while the crew is
+# aboard, so a refusal cannot be confused with the server being unreachable.
+echo "--- starting an intruder with the wrong password"
+E2E_ROLE=intruder with_timeout 60 "$GODOT" --headless --path . tests/e2e_dedicated.tscn \
+  > "$OUT_DIR/intruder.log" 2>&1 || true
+
 wait "$LEAD_PID" 2>/dev/null; LEAD_PID=""
 wait "$FOLLOWER_PID" 2>/dev/null; FOLLOWER_PID=""
 wait "$SERVER_PID" 2>/dev/null; SERVER_PID=""
 
-for role in server lead follower; do
+for role in server lead follower intruder; do
   echo "--- $role log ---"; cat "$OUT_DIR/$role.log"
 done
 
@@ -72,6 +80,13 @@ need "E2E_LEAD_LOBBY_OK"     lead
 need "E2E_LEAD_OK"           lead
 need "E2E_FOLLOWER_LOBBY_OK" follower
 need "E2E_FOLLOWER_OK"       follower
+# The security-critical assertion: a wrong password does not get in.
+need "E2E_INTRUDER_REFUSED"  intruder
+# And it must never have been seated. Godot drops an unauthenticated peer before it
+# counts as connected, so this greps for any sign it got further than the door.
+if grep -qE "E2E_INTRUDER_(LOBBY_)?OK" "$OUT_DIR/intruder.log" 2>/dev/null; then
+  echo "INTRUDER WAS ADMITTED — authentication is not working"; FAIL=1
+fi
 
 if grep -h "E2E_DEDICATED_FAIL" "$OUT_DIR"/*.log; then
   echo "a role reported a failure (see above)"; FAIL=1

@@ -23,6 +23,7 @@ var _summary: Label
 var _address: LineEdit
 var _code_edit: LineEdit
 var _server_edit: LineEdit
+var _server_password: LineEdit
 var _patches: Array[ColorRect] = []
 
 
@@ -41,6 +42,7 @@ func _ready() -> void:
 	Net.status_changed.connect(func(text: String) -> void: _status.text = text)
 	Net.entered_lobby.connect(_on_entered_lobby)
 	Net.session_ended.connect(func() -> void: _menu_box.visible = true)
+	Net.failed_to_join.connect(func() -> void: _menu_box.visible = true)
 	Station.changed.connect(_refresh_summary)
 	Settings.changed.connect(_refresh_patches)
 	_build()
@@ -134,8 +136,13 @@ func _build() -> void:
 	_server_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	server_row.add_child(_server_edit)
 	var join_server := Button.new()
+	_server_password = LineEdit.new()
+	_server_password.placeholder_text = "password (if any)"
+	_server_password.secret = true
+	_server_password.custom_minimum_size = Vector2(96, 0)
+	server_row.add_child(_server_password)
 	join_server.text = "JOIN SERVER"
-	join_server.pressed.connect(func() -> void: Net.join_server(_server_edit.text))
+	join_server.pressed.connect(func() -> void: Net.join_server(_server_edit.text, _server_password.text))
 	server_row.add_child(join_server)
 
 	var webrtc_ok := Net.webrtc_available()
