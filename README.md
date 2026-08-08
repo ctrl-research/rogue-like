@@ -108,9 +108,10 @@ To bump `MINOR`, edit `./VERSION` in a normal PR. Releases are marked
 
 | Artifact | Where |
 | --- | --- |
-| macOS `.zip` + Windows `.exe` | GitHub release |
+| macOS `.zip` + Windows `.zip` | GitHub release |
 | Self-contained web bundle `.zip` | GitHub release |
 | `ghcr.io/<repo>/signaling:<version>` and `:latest` | GHCR |
+| `ghcr.io/<repo>/server:<version>` and `:latest` | GHCR (the dedicated game server) |
 
 Pin the versioned image tag in a deployment rather than chasing `:latest`, so a
 client and hub of known-compatible versions stay together.
@@ -132,8 +133,10 @@ unsigned**, so the OS warns on first launch:
 - **macOS** — unzip, then right-click the app and choose *Open*, or
   `xattr -dr com.apple.quarantine AbyssalSalvage.app`. Double-clicking normally
   will be refused.
-- **Windows** — SmartScreen warns; *More info* then *Run anyway*. The `.pck` is
-  embedded, so it is a single `.exe`.
+- **Windows** — unzip, then SmartScreen warns; *More info* then *Run anyway*. The
+  `.pck` is embedded in the `.exe`, but **keep the `.dll` beside it**: a
+  GDExtension cannot live inside a pck, so online play needs both files together.
+  That is why Windows ships as a zip rather than a bare exe.
 
 Signing would remove the warnings but needs an Apple Developer account and a
 Windows code-signing certificate; neither is worth it for a hobby build.

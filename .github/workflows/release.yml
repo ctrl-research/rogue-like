@@ -29,6 +29,7 @@ permissions:
 env:
   GODOT_VERSION: "4.6.3"
   IMAGE: ghcr.io/${{ github.repository }}/signaling
+  SERVER_IMAGE: ghcr.io/${{ github.repository }}/server
 
 jobs:
   version:
@@ -183,9 +184,81 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # The dedicated game server: an exported headless Godot binary in a container.
+  # Blocked until now because release.yml only reached main with #60, after the
+  # server itself landed in #62.
+  server:
+    name: Game server image
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Godot and export templates
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" godot
+          chmod +x godot
+          unzip -q templates.tpz
+          template_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$template_dir"
+          mv templates/* "$template_dir/"
+
+      - name: Stamp version
+        run: scripts/stamp_version.sh "${{ needs.version.outputs.version }}"
+
+      - name: Export dedicated server
+        run: |
+          set -euo pipefail
+          mkdir -p build/server
+          ./godot --headless --path . --import 2>&1 | tee -a server.log
+          ./godot --headless --path . --export-release "Server" \
+            "build/server/abyssal-server" 2>&1 | tee -a server.log
+          test -s build/server/abyssal-server
+          # An export exits 0 through a failed script compile, so success alone
+          # does not mean this binary can serve a game.
+          if grep -nE "SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR" server.log; then
+            echo "::error::errors detected during the server export"; exit 1
+          fi
+          ls -lh build/server/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: needs.version.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # amd64 only: the exported binary is x86_64, so a multi-arch manifest would
+      # advertise an arm64 image that cannot run.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: linux/amd64
+          push: ${{ needs.version.outputs.publish == 'true' }}
+          tags: |
+            ${{ env.SERVER_IMAGE }}:${{ needs.version.outputs.version }}
+            ${{ env.SERVER_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   publish:
     name: Publish release
-    needs: [version, desktop, web, image]
+    needs: [version, desktop, web, image, server]
     if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -227,8 +300,9 @@ jobs:
           - **macOS** — unzip, then right-click the app and choose *Open* (or
             \`xattr -dr com.apple.quarantine AbyssalSalvage.app\`). Double-clicking
             it normally will be refused.
-          - **Windows** — SmartScreen warns; *More info* then *Run anyway*. Single
-            \`.exe\`, the pck is embedded.
+          - **Windows** — unzip, then SmartScreen warns; *More info* then *Run
+            anyway*. Keep the \`.dll\` beside the \`.exe\`: a GDExtension cannot live
+            inside the pck, so online play needs both files together.
 
           ## Playing together
 
@@ -247,6 +321,16 @@ jobs:
 
           \`AbyssalSalvage-web-${VERSION}.zip\` is a self-contained static bundle,
           the same build deployed to GitHub Pages. Serve it from any static host.
+
+          ## Dedicated game server
+
+          \`\`\`
+          ${SERVER_IMAGE}:${VERSION}
+          \`\`\`
+
+          Everyone dials one address, so there is no NAT traversal and no relay:
+          clients connect outbound, which works from behind CGNAT and mobile NAT.
+          Speaks plain \`ws\` and expects TLS to terminate in front of it.
 
           ## Signalling hub
 
