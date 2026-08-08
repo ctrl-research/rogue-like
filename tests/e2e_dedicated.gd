@@ -180,8 +180,10 @@ func _check_choice(scene: Node) -> void:
 		return
 	if _choice_after == 0.0:
 		_choice_after = _elapsed + 6.0
-	_beat("choice drill: awaiting=%s depth=%d lead=%d" % [
-			scene.awaiting_choice, scene.depth, scene.leader_peer_id()])
+	_beat("choice drill: awaiting=%s depth=%d lead=%d me=%d %s" % [
+			scene.awaiting_choice, scene.depth, scene.leader_peer_id(),
+			multiplayer.get_unique_id(),
+			"(I LEAD)" if scene.leader_peer_id() == multiplayer.get_unique_id() else ""])
 
 	if role == "server" and not _drill_armed:
 		_drill_armed = true
@@ -201,8 +203,14 @@ func _check_choice(scene: Node) -> void:
 		print("[follower] attempting DESCEND (must be refused — not the lead diver)")
 		scene.request_choice.rpc_id(1, true)
 		return
-	if role == "follower" and _choice_requested and scene.depth > START_DEPTH:
-		_fail("a non-leader's call was honoured: depth reached %d" % scene.depth)
+	# Only fail while the lead is still barred from acting. Once its window opens, a
+	# depth change is the leader legitimately descending — the first version of this
+	# check could not tell the two apart and failed the run every time the feature
+	# worked, which is a false negative in the test written to catch false positives.
+	if role == "follower" and _choice_requested and _elapsed <= _choice_after \
+			and scene.depth > START_DEPTH:
+		_fail("a non-leader's call was honoured before the lead diver acted: depth %d"
+				% scene.depth)
 		return
 
 	# Then the lead diver, who joined first, calls it for real. Delayed so the
