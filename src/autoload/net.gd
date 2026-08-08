@@ -50,6 +50,9 @@ var requested_depth := 1
 ## Password this client will present when joining. Not persisted: a lobby
 ## password is something you are told, and writing it to disk buys little.
 var _join_password := ""
+## Which side of the auth handshake this process is on. Explicit, because
+## is_server() is unreliable before a peer is assigned — see _arm_auth_server.
+var _auth_as_server := false
 
 
 func _ready() -> void:
@@ -221,7 +224,7 @@ func host_dedicated(port: int = SERVER_PORT) -> Error:
 	multiplayer.multiplayer_peer = peer
 	mode = Mode.WEBSOCKET
 	is_online = true
-	_arm_auth(server_password())
+	_arm_auth_server(server_password())
 	print("[server] listening on ws://0.0.0.0:%d — one lobby, up to %d divers, %s"
 			% [port, MAX_PLAYERS, "password required"
 			if not server_password().is_empty() else "OPEN (no password)"])
@@ -242,9 +245,6 @@ func host_dedicated(port: int = SERVER_PORT) -> Error:
 func join_server(url: String = "", password: String = "") -> Error:
 	_reset_peer()
 	_join_password = password
-	# Always armed on the client: when the server needs no password this costs
-	# nothing, because peer_authenticating never fires.
-	_arm_auth("")
 	var target := url.strip_edges()
 	if target.is_empty():
 		target = server_url()
@@ -254,6 +254,8 @@ func join_server(url: String = "", password: String = "") -> Error:
 		status_changed.emit("Could not reach the server (%s)." % target)
 		return err
 	multiplayer.multiplayer_peer = peer
+	# Armed AFTER the peer is assigned: before that, is_server() lies.
+	_arm_auth_client()
 	mode = Mode.WEBSOCKET
 	is_online = true
 	status_changed.emit("Connecting to %s..." % target)
@@ -365,17 +367,20 @@ func leave() -> void:
 ## CONNECTED, so it cannot send a single RPC. Checking a password inside an @rpc
 ## would mean the unauthenticated peer had already been able to call that one — and
 ## everything else reachable from any_peer.
-func _arm_auth(required: String) -> void:
+## Role is passed in, never inferred.
+##
+## The first version branched on multiplayer.is_server() and was wrong on the
+## client: it runs before the peer is assigned, and OfflineMultiplayerPeer reports
+## is_server() == true — so the client took the SERVER branch, cleared its own
+## auth_callback, considered itself connected and started sending game traffic to a
+## server still waiting to authenticate it. That surfaced as a flood of
+## SYS_COMMAND_AUTH errors and nobody ever joining.
+func _arm_auth_server(required: String) -> void:
 	var sm := multiplayer as SceneMultiplayer
 	if sm == null:
 		return
 	sm.auth_timeout = AUTH_TIMEOUT
-	if not multiplayer.is_server():
-		# The client accepts the server once it answers. Both sides have to
-		# complete, or the connection never finishes establishing.
-		sm.auth_callback = func(id: int, _data: PackedByteArray) -> void:
-			sm.complete_auth(id)
-		return
+	_auth_as_server = true
 	if required.is_empty():
 		sm.auth_callback = Callable()  # open server: no auth step at all
 		return
@@ -390,8 +395,20 @@ func _arm_auth(required: String) -> void:
 			sm.disconnect_peer(id)
 
 
+func _arm_auth_client() -> void:
+	var sm := multiplayer as SceneMultiplayer
+	if sm == null:
+		return
+	sm.auth_timeout = AUTH_TIMEOUT
+	_auth_as_server = false
+	# Accept the server once it answers. Both sides must complete, or the connection
+	# never finishes establishing.
+	sm.auth_callback = func(id: int, _data: PackedByteArray) -> void:
+		sm.complete_auth(id)
+
+
 func _on_peer_authenticating(id: int) -> void:
-	if multiplayer.is_server():
+	if _auth_as_server:
 		return  # the server waits to be told; it does not ask
 	var sm := multiplayer as SceneMultiplayer
 	if sm != null:
@@ -399,7 +416,7 @@ func _on_peer_authenticating(id: int) -> void:
 
 
 func _on_peer_authentication_failed(_id: int) -> void:
-	if multiplayer.is_server():
+	if _auth_as_server:
 		return
 	status_changed.emit("Wrong password for that server.")
 	failed_to_join.emit()
