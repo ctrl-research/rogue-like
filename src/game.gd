@@ -783,6 +783,26 @@ func _check_extraction(delta: float) -> void:
 		extraction_progress = 0.0
 
 
+## The bell's safe zone, or null while there is no bell.
+##
+## Read from the "bell" group rather than the server's own _bell reference, so every
+## peer answers this identically — the visuals, the movement clamp and the damage
+## check all have to agree or a diver is safe on one screen and dying on another.
+func bell_safe_center() -> Variant:
+	var bell := get_tree().get_first_node_in_group("bell")
+	if bell == null or not is_instance_valid(bell):
+		return null
+	return (bell as Node2D).global_position
+
+
+## Is this point inside the bell's breathing room?
+func in_bell_safety(pos: Vector2) -> bool:
+	var centre: Variant = bell_safe_center()
+	if centre == null:
+		return false
+	return pos.distance_to(centre as Vector2) <= GameRules.BELL_SAFE_RADIUS
+
+
 ## The lead diver, as tracked by Net from arrival order.
 ##
 ## This used to take the lowest peer id among spawned divers, on the assumption that

@@ -5,6 +5,33 @@ class_name GameRules
 const ARENA_SIZE := Vector2(1600, 1600)
 const ENEMY_CAP := 80
 const CRATE_COUNT := 6
+## The bell's safe zone. Comfortably wider than the bell's own 26px body, so the ring
+## reads as an area you stand in rather than a hitbox you touch.
+##
+## Inside it a diver cannot be hurt, cannot attack, and cannot leave until the crew
+## moves on — a deliberate pause after a horde rather than a place to camp, which is
+## why it only exists once the bell is down and the run is already decided.
+const BELL_SAFE_RADIUS := 58.0
+## How fast a monster caught inside when the bell lands is shoved out. Pushed rather
+## than killed: something invulnerable AND harmless sitting in the middle of the
+## breathing room is worse than a brief shove.
+const BELL_PUSH_SPEED := 120.0
+
+
+## Pull a position back onto the safe zone's edge.
+##
+## Extracted here rather than left inline in player.gd so it can be tested without
+## standing up a scene — it is the only real geometry in the safe zone, and getting it
+## wrong either lets a diver walk out or pins them at the centre.
+static func clamp_into_safety(pos: Vector2, centre: Vector2) -> Vector2:
+	var out := pos - centre
+	if out.length() <= BELL_SAFE_RADIUS:
+		return pos  # already inside; leave it alone
+	if out.length() < 0.001:
+		# Exactly on the centre has no direction to push along. Any edge point is as
+		# good as another, so pick one rather than dividing by ~zero.
+		return centre + Vector2.RIGHT * BELL_SAFE_RADIUS
+	return centre + out.normalized() * BELL_SAFE_RADIUS
 const OXYGEN_TIME := 300.0  # seconds; at zero, suffocation damage starts
 const SUFFOCATION_DPS := 6.0
 const EXTRACTION_TIME := 3.0  # seconds all active divers must hold the bell

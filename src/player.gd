@@ -116,7 +116,17 @@ func _physics_process(delta: float) -> void:
 		if not downed:
 			var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 			velocity = input * move_speed * (GameRules.TOW_SPEED_SCALE if towing else 1.0)
+			var was_safe := game.in_bell_safety(global_position)
 			move_and_slide()
+			# Once you are in the bell's breathing room you stay until the crew moves
+			# on. Clamped on the owning client because movement is client-authoritative
+			# — the same place mining is detected.
+			if was_safe and not game.in_bell_safety(global_position):
+				var centre: Variant = game.bell_safe_center()
+				if centre != null:
+					global_position = GameRules.clamp_into_safety(
+							global_position, centre as Vector2)
+					velocity = Vector2.ZERO
 			# Mining: colliding with rock while actively pressing into it.
 			# Detected here on the owning client (movement is client-auth)
 			# and synced; the server does the authoritative digging.
@@ -154,6 +164,10 @@ func display_name() -> String:
 ## Server only.
 func take_damage(amount: float) -> void:
 	if dead or downed:
+		return
+	# The bell's breathing room. Checked here rather than at each damage source, so
+	# nothing — a stray projectile, a mine, suffocation — can reach inside it.
+	if game != null and game.in_bell_safety(global_position):
 		return
 	hp = maxf(0.0, hp - amount)
 	if hp <= 0.0:
@@ -293,6 +307,10 @@ func is_mining() -> bool:
 
 
 func _server_combat(delta: float) -> void:
+	# Guns down inside the bell's safe zone. It is a pause, not a turret post — and
+	# since monsters cannot enter, shooting out of it would be free damage.
+	if game != null and game.in_bell_safety(global_position):
+		return
 	# Hands full: mining pauses the guns — unless you carry the drill, whose
 	# crews are used to working and shooting at once.
 	if is_mining() and not weapons.has("drill"):

@@ -280,6 +280,36 @@ func _ready() -> void:
 	_check(Net.max_clients() == Net.MAX_PLAYERS - 1,
 			"a listen server leaves a seat for its own diver")
 
+	# The bell's safe zone. Only the geometry is unit-testable without a scene, and it
+	# is the part that matters: a wrong clamp either lets a diver walk out of the
+	# breathing room or pins them to its centre.
+	var centre := Vector2(400, 300)
+	var r := GameRules.BELL_SAFE_RADIUS
+	_check(r > 26.0, "the safe radius is wider than the bell's own body")
+	_check(GameRules.BELL_PUSH_SPEED > 0.0, "monsters caught inside are pushed out")
+	# Inside stays exactly where it is — no snapping to the edge.
+	var inside := centre + Vector2(10, 0)
+	_check(GameRules.clamp_into_safety(inside, centre) == inside,
+			"a position already inside is left alone")
+	# Outside comes back to the edge, keeping its bearing from the centre.
+	var outside := centre + Vector2(r + 40.0, 0.0)
+	var pulled := GameRules.clamp_into_safety(outside, centre)
+	_check(is_equal_approx(pulled.distance_to(centre), r),
+			"a position outside lands exactly on the edge")
+	_check(pulled.y == centre.y and pulled.x > centre.x,
+			"clamping preserves the direction you walked")
+	# Diagonals must not favour an axis.
+	var diag := centre + Vector2(r + 50.0, r + 50.0)
+	_check(is_equal_approx(GameRules.clamp_into_safety(diag, centre).distance_to(centre), r),
+			"diagonal exits clamp to the edge too")
+	# Dead centre has no direction to push along; it must not divide by zero.
+	var at_centre := GameRules.clamp_into_safety(centre, centre)
+	_check(at_centre == centre, "the exact centre is inside, so it is left alone")
+	_check(is_equal_approx(
+			GameRules.clamp_into_safety(centre + Vector2(r + 1.0, 0.0), centre)
+					.distance_to(centre), r),
+			"just outside the edge clamps rather than overshooting")
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()
