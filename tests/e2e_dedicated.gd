@@ -1,7 +1,10 @@
 extends Node
-## Dedicated-server end-to-end monitor. Three processes, one scene, role from the
-## E2E_ROLE env var: one `server` (no diver of its own) plus two divers, `lead` and
-## `follower`.
+## Dedicated-server end-to-end monitor. Three processes, one scene, role set by
+## tests/e2e_dedicated_boot.gd from E2E_ROLE: one `server` (no diver of its own)
+## plus two divers, `lead` and `follower`.
+##
+## Parented to /root by the boot scene, NOT part of the current scene — it changes
+## scenes itself, and a node that is the current scene gets freed when it does.
 ##
 ## This exists to cover what the WebRTC e2e cannot: that the server is NOT a
 ## player. The assertions below are chosen to fail on the specific mistakes this
@@ -29,9 +32,7 @@ var _dive_requested := false
 
 
 func _ready() -> void:
-	role = OS.get_environment("E2E_ROLE")
-	if role.is_empty():
-		role = "server"
+	# `role` is set by tests/e2e_dedicated_boot.gd before this is added to /root.
 	Net.status_changed.connect(func(t: String) -> void: print("[%s] %s" % [role, t]))
 	Net.entered_lobby.connect(func(_r: String, _h: bool) -> void:
 		get_tree().change_scene_to_file(Net.SUB_SCENE))
@@ -56,6 +57,10 @@ func _process(delta: float) -> void:
 		return
 	match _phase:
 		"connect":
+			# Heartbeat here too: the first version printed nothing at all while
+			# stuck in this phase, which made a dead monitor look identical to a
+			# server that was simply waiting.
+			_beat("connecting... scene=%s" % scene.name)
 			if scene.name == "Sub":
 				_phase = "lobby"
 		"lobby":
