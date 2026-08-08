@@ -76,7 +76,10 @@ func _check_lobby(scene: Node) -> void:
 
 	if role == "server":
 		# No phantom diver for the server, and no seat in its own roster.
-		var mine := scene.divers.get_node_or_null("D1")
+		# Explicit Node: `divers` is not a member of Node, so reaching through it is
+		# a Variant call and `:=` cannot infer — the same trap that has broken this
+		# project's parse six times now.
+		var mine: Node = scene.divers.get_node_or_null("D1")
 		if mine != null:
 			_fail("the server seated itself as a diver (D1 exists)")
 			return
