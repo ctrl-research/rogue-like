@@ -64,7 +64,15 @@ func _process(delta: float) -> void:
 			if scene.name == "Sub":
 				_phase = "lobby"
 		"lobby":
-			_check_lobby(scene)
+			# Driven by which scene is actually loaded rather than by manual
+			# transitions. The server used to report its lobby marker and never
+			# advance, so once the dive started it kept probing `scene.divers` on the
+			# Game scene — 38 script errors from one missing state change. Keying the
+			# phase off the scene makes that class of mistake unreachable.
+			if scene.name == "Sub":
+				_check_lobby(scene)
+			else:
+				_phase = "dive"
 		"dive":
 			_check_dive(scene)
 
@@ -106,9 +114,6 @@ func _check_lobby(scene: Node) -> void:
 		_dive_requested = true
 		print("[lead] requesting the dive at depth %d" % START_DEPTH)
 		Net.request_dive.rpc_id(1, START_DEPTH)
-		_phase = "dive"
-	elif role == "follower":
-		_phase = "dive"
 
 
 func _check_dive(scene: Node) -> void:
