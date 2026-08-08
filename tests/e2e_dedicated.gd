@@ -32,6 +32,11 @@ var _phase := "connect"
 var _elapsed := 0.0
 var _reported := {}
 var _dive_requested := false
+var _drill_armed := false
+var _choice_requested := false
+## The lead waits before calling, so the follower's refused attempt provably goes
+## first — otherwise a passing run would not prove the refusal happened at all.
+var _choice_after := 0.0
 
 
 func _ready() -> void:
@@ -86,6 +91,8 @@ func _process(delta: float) -> void:
 				_phase = "dive"
 		"dive":
 			_check_dive(scene)
+		"choice":
+			_check_choice(scene)
 
 
 func _check_lobby(scene: Node) -> void:
@@ -153,16 +160,73 @@ func _check_dive(scene: Node) -> void:
 		_once("E2E_SERVER_OK", "2 players spawned and %d enemies live" % enemies)
 	else:
 		_once("E2E_%s_OK" % role.to_upper(), "2 players and %d enemies replicated" % enemies)
+	_phase = "choice"
 
 
-func _once(marker: String, detail: String) -> void:
+## The bell decision, which is where the dive-hatch bug had a sibling nobody looked
+## for: choose_extract/choose_descend were gated on is_server(), so on a dedicated
+## server the choice appeared for NO player and the run auto-extracted itself.
+##
+## Forced rather than played to: reaching the bell legitimately needs a whole quest
+## completed, and this is testing who may DECIDE, not how you get there. The revive
+## drill in the WebRTC e2e sets up its state the same way.
+func _check_choice(scene: Node) -> void:
+	# Same guard _check_dive carries, and for the same reason: when the first role
+	# reaches its terminal marker and quits, the session dies and the other peers are
+	# returned to the main menu — where awaiting_choice does not exist. Reading a
+	# scene-specific field without checking the scene is how this file has broken
+	# twice now, so the check belongs in every phase, not just the ones that hit it.
+	if scene.name != "Game":
+		return
+	if _choice_after == 0.0:
+		_choice_after = _elapsed + 6.0
+	_beat("choice drill: awaiting=%s depth=%d lead=%d" % [
+			scene.awaiting_choice, scene.depth, scene.leader_peer_id()])
+
+	if role == "server" and not _drill_armed:
+		_drill_armed = true
+		# Generous, or the server auto-extracts before a diver can answer.
+		scene.decision_left = 60.0
+		scene.awaiting_choice = true
+		print("[server] drill: awaiting_choice set, waiting for the lead diver")
+		return
+
+	# The FOLLOWER goes first, and must be ignored. It joined second, so it is not the
+	# lead diver — and the server authorises on sender identity rather than trusting
+	# that the button was hidden. Proving the refusal matters as much as proving the
+	# leader works: an implementation that accepted everyone would pass a
+	# leader-only test.
+	if role == "follower" and scene.awaiting_choice and not _choice_requested:
+		_choice_requested = true
+		print("[follower] attempting DESCEND (must be refused — not the lead diver)")
+		scene.request_choice.rpc_id(1, true)
+		return
+	if role == "follower" and _choice_requested and scene.depth > START_DEPTH:
+		_fail("a non-leader's call was honoured: depth reached %d" % scene.depth)
+		return
+
+	# Then the lead diver, who joined first, calls it for real. Delayed so the
+	# follower's rejected attempt has demonstrably landed first.
+	if role == "lead" and scene.awaiting_choice and not _choice_requested \
+			and _elapsed > _choice_after:
+		_choice_requested = true
+		print("[lead] requesting DESCEND")
+		scene.request_choice.rpc_id(1, true)
+		return
+
+	# Descending increments depth and clears the flag on every peer.
+	if scene.depth >= START_DEPTH + 1 and not scene.awaiting_choice:
+		_once("E2E_%s_CHOICE_OK" % role.to_upper(),
+				"a diver's call was honoured: depth=%d" % scene.depth, true)
+
+
+func _once(marker: String, detail: String, terminal := false) -> void:
 	if _reported.has(marker):
 		return
 	_reported[marker] = true
 	print("[%s] %s" % [role, detail])
 	print(marker)
-	# Every role has exactly one terminal marker; the harness collects them.
-	if marker.ends_with("_OK") and not marker.ends_with("_LOBBY_OK"):
+	if terminal:
 		await get_tree().create_timer(1.0).timeout
 		get_tree().quit(0)
 

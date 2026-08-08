@@ -100,12 +100,16 @@ func _process(_delta: float) -> void:
 	_update_markers()
 
 	var deciding: bool = _game.awaiting_choice and not _game.game_over
-	_choice_box.visible = deciding and multiplayer.is_server()
+	# The lead diver decides — the earliest-joined crew member, which passes to
+	# whoever joined next if they leave. Gating this on is_server() showed it to
+	# nobody on a dedicated server and let the run auto-extract itself.
+	var leading: bool = _game.leader_peer_id() == multiplayer.get_unique_id()
+	_choice_box.visible = deciding and leading
 	if _choice_box.visible:
 		_extract_btn.text = "EXTRACT — BANK %d" % _game.salvage_earned
 		_choice_countdown.text = "auto-extract in %ds" % ceili(maxf(0.0, _game.decision_left))
 
-	if deciding and not multiplayer.is_server():
+	if deciding and not leading:
 		_extract_label.visible = true
 		_extract_label.text = "LEAD DIVER IS DECIDING... %ds" % ceili(maxf(0.0, _game.decision_left))
 	elif _game.extraction_progress > 0.0 and not _game.game_over and not deciding:
@@ -487,19 +491,19 @@ func _build() -> void:
 	_choice_box.add_theme_constant_override("separation", 6)
 	_choice_box.visible = false
 	add_child(_choice_box)
-	var choice_title := _label("BELL SECURED — YOUR CALL", 10)
+	var choice_title := _label("BELL SECURED — YOUR CALL, LEAD DIVER", 10)
 	choice_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	choice_title.modulate = Color(0.95, 0.85, 0.4)
 	_choice_box.add_child(choice_title)
 	_extract_btn = Button.new()
 	_extract_btn.text = "EXTRACT"
 	_extract_btn.add_theme_font_size_override("font_size", 9)
-	_extract_btn.pressed.connect(func() -> void: _game.choose_extract())
+	_extract_btn.pressed.connect(func() -> void: _request_choice(false))
 	_choice_box.add_child(_extract_btn)
 	var descend_btn := Button.new()
 	descend_btn.text = "DESCEND — DEEPER, RICHER (+O2)"
 	descend_btn.add_theme_font_size_override("font_size", 9)
-	descend_btn.pressed.connect(func() -> void: _game.choose_descend())
+	descend_btn.pressed.connect(func() -> void: _request_choice(true))
 	_choice_box.add_child(descend_btn)
 	_choice_countdown = _label("", 8)
 	_choice_countdown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -553,3 +557,14 @@ func _label(text: String, size: int) -> Label:
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	return l
+
+
+## Route the call through the server. A diver on a dedicated server is never the
+## authority, so pressing these has to be a request rather than a direct call. The
+## server re-checks that the sender is the lead diver — this button being hidden from
+## everyone else is presentation, not enforcement.
+func _request_choice(descend: bool) -> void:
+	if multiplayer.is_server():
+		_game.request_choice(descend)
+	else:
+		_game.request_choice.rpc_id(1, descend)
