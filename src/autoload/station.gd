@@ -160,6 +160,37 @@ func bank_salvage(amount: int) -> void:
 	changed.emit()
 
 
+## Clamp a meta dict that arrived from another peer.
+##
+## _rpc_notify_ready is @rpc("any_peer"), so on a public dedicated server this dict
+## is attacker-controlled. It drives max_hp, move speed, weapon damage and the
+## crew's SHARED oxygen tank, so an unclamped `hull: 99999` is an invulnerable
+## diver and an unclamped `o2` never runs the tank down — for everyone, since
+## _start_run pools o2 across the whole crew. Levels are therefore capped at what
+## the shop can actually sell.
+##
+## Progression stays client-owned; this bounds a claim rather than verifying it.
+## Verifying would need server-side accounts, which is a different game.
+func sanitize_meta(raw: Variant) -> Dictionary:
+	var d: Dictionary = raw if raw is Dictionary else {}
+	var out := {}
+	for id in UPGRADES:
+		out[id] = _claimed_level(d.get(id), int(UPGRADES[id].max))
+	var diver_id := str(d.get("diver", Divers.DEFAULT))
+	out["diver"] = diver_id if Divers.valid(diver_id) else Divers.DEFAULT
+	out["profile"] = Appearance.sanitize(d.get("profile", {}))
+	return out
+
+
+## Type-checked on purpose: int() on a Dictionary or an Array is a runtime error,
+## so `{"hull": {}}` from a hostile client would crash the server mid-handshake
+## rather than merely cheating. Anything that is not a number reads as level 0.
+static func _claimed_level(value: Variant, cap: int) -> int:
+	if value is int or value is float:
+		return clampi(int(value), 0, cap)
+	return 0
+
+
 ## The dict sent to the game server at dive start (see _rpc_notify_ready).
 func meta_dict() -> Dictionary:
 	return {
