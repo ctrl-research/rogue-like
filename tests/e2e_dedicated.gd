@@ -168,6 +168,13 @@ func _check_dive(scene: Node) -> void:
 ## completed, and this is testing who may DECIDE, not how you get there. The revive
 ## drill in the WebRTC e2e sets up its state the same way.
 func _check_choice(scene: Node) -> void:
+	# Same guard _check_dive carries, and for the same reason: when the first role
+	# reaches its terminal marker and quits, the session dies and the other peers are
+	# returned to the main menu — where awaiting_choice does not exist. Reading a
+	# scene-specific field without checking the scene is how this file has broken
+	# twice now, so the check belongs in every phase, not just the ones that hit it.
+	if scene.name != "Game":
+		return
 	_beat("choice drill: awaiting=%s depth=%d" % [scene.awaiting_choice, scene.depth])
 
 	if role == "server" and not _drill_armed:
