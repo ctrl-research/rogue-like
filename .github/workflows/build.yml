@@ -92,6 +92,16 @@ jobs:
           ./godot --headless --path . --quit-after 24000 tests/headless_sim.tscn 2>&1 | tee -a build.log
           grep -q "SIM_OK" build.log
 
+      # The dedicated server, which is what online play is moving to. Three
+      # headless processes over loopback WebSocket: a server with no diver plus two
+      # divers. Needs no broker, no extension and no network, so unlike the WebRTC
+      # test below it cannot be skipped.
+      - name: Dedicated server end-to-end test
+        run: |
+          set -euo pipefail
+          GODOT=./godot bash scripts/e2e_dedicated.sh 2>&1 | tee -a build.log
+          grep -q "E2E_DEDICATED_PASSED" build.log
+
       # Real two-instance WebRTC test through the actual signaling broker.
       # Skips (with a warning) only if the extension download was unavailable.
       - name: WebRTC end-to-end test

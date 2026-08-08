@@ -68,7 +68,11 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		Net.sub_aboard_received.connect(_on_aboard)
 		multiplayer.peer_disconnected.connect(_on_peer_left)
-		_roster[1] = _my_seat()
+		# A dedicated server takes no seat: it has no diver, no Station and no
+		# profile. Seating it would put a phantom body on the deck and inflate the
+		# crew, which sets enemy counts and HP scaling.
+		if not Net.is_dedicated():
+			_roster[1] = _my_seat()
 		_broadcast_roster()
 	else:
 		# Draw ourselves immediately rather than waiting to be acknowledged; the
@@ -183,6 +187,8 @@ func _my_seat() -> Dictionary:
 
 
 func _keep_self_aboard() -> void:
+	if Net.is_dedicated():
+		return  # nothing to keep aboard; the server is not a diver
 	# Overwrite rather than fill-if-missing: we are the authority on our own
 	# appearance, so editing it at the locker shows up on our own diver at once
 	# instead of waiting for the host's roster to make the round trip. The host
@@ -215,7 +221,8 @@ func _on_peer_left(pid: int) -> void:
 ## Diver class changed at the locker: tell the crew so name tags update.
 func _on_station_changed() -> void:
 	if multiplayer.is_server():
-		if Appearance.seat_key(_roster.get(1)) != Appearance.seat_key(_my_seat()):
+		if not Net.is_dedicated() \
+				and Appearance.seat_key(_roster.get(1)) != Appearance.seat_key(_my_seat()):
 			_roster[1] = _my_seat()
 			_broadcast_roster()
 	else:
@@ -334,11 +341,20 @@ func _build_hatch_panel(box: VBoxContainer) -> void:
 				DisplayServer.clipboard_set(_share_url)
 				copy.text = "LINK COPIED!")
 			box.add_child(copy)
-	if multiplayer.is_server():
+	# Any diver may start the dive, not just the host: on a dedicated server no
+	# player IS the host, so gating this on is_server() would leave the crew unable
+	# to ever leave the sub. The label names the depth because it is the starter's
+	# own winch that applies.
+	if not Net.is_dedicated():
 		var start := Button.new()
 		start.text = "START THE DIVE — DEPTH %d" % Station.dive_depth
 		start.add_theme_font_size_override("font_size", 9)
-		start.pressed.connect(func() -> void: Net.start_dive())
+		start.pressed.connect(func() -> void:
+			if multiplayer.is_server():
+				Net.requested_depth = Station.dive_depth
+				Net.start_dive()
+			else:
+				Net.request_dive.rpc_id(1, Station.dive_depth))
 		box.add_child(start)
 	else:
 		var wait := Label.new()

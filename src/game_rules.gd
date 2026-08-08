@@ -43,6 +43,26 @@ const DELIVER_RADIUS := 60.0  # payload-to-bell-zone distance that completes
 # just the Warden between the crew and the descent. Clearing one unlocks
 # the next winch-refit checkpoint at the station.
 const BOSS_DEPTH_INTERVAL := 5
+## Deepest tier a dive may be requested to start at. The requesting diver's winch
+## is client-owned and cannot be verified by the server (progression is local by
+## design — see game.gd's _rpc_game_over), so this bounds what a bad or hostile
+## value can do instead of trusting it.
+const MAX_START_TIER := 20
+
+
+## Is this a depth a dive could legitimately start from? Valid starts are the
+## surface, or one past a boss lair. Checking the SHAPE rather than only a range
+## rejects an arbitrary "start me at depth 47" outright.
+static func valid_start_depth(d: int) -> bool:
+	if d == 1:
+		return true
+	if d < 1:
+		return false
+	var past_lair := d - 1
+	return past_lair % BOSS_DEPTH_INTERVAL == 0 \
+			and past_lair / BOSS_DEPTH_INTERVAL <= MAX_START_TIER
+
+
 const BOSS_REWARD_BASE := 40  # lair guardian bounty, times depth
 # Ordinary waves stop this far below ENEMY_CAP inside a lair, so the guardian
 # and the adds it calls always have room to exist. Without the reserve the

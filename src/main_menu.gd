@@ -22,10 +22,17 @@ var _status: Label
 var _summary: Label
 var _address: LineEdit
 var _code_edit: LineEdit
+var _server_edit: LineEdit
 var _patches: Array[ColorRect] = []
 
 
 func _ready() -> void:
+	# A dedicated server has no player and no business building a title screen.
+	# It boards the sub (which owns the roster and the dive hatch) and waits.
+	if Net.is_dedicated():
+		print("[server] dedicated mode — starting without a title screen")
+		Net.host_dedicated(Net.dedicated_port())
+		return
 	Net.status_changed.connect(func(text: String) -> void: _status.text = text)
 	Net.entered_lobby.connect(_on_entered_lobby)
 	Net.session_ended.connect(func() -> void: _menu_box.visible = true)
@@ -100,6 +107,21 @@ func _build() -> void:
 	solo.text = "BOARD THE SUB — SOLO"
 	solo.pressed.connect(func() -> void: Net.start_solo())
 	_menu_box.add_child(solo)
+
+	# The dedicated server: one address everyone dials. Outbound-only, so it works
+	# from behind CGNAT and mobile NAT with no relay — unlike the peer-to-peer
+	# room codes below, which this is replacing.
+	var server_row := HBoxContainer.new()
+	server_row.add_theme_constant_override("separation", 6)
+	_menu_box.add_child(server_row)
+	_server_edit = LineEdit.new()
+	_server_edit.placeholder_text = Net.server_url()
+	_server_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	server_row.add_child(_server_edit)
+	var join_server := Button.new()
+	join_server.text = "JOIN SERVER"
+	join_server.pressed.connect(func() -> void: Net.join_server(_server_edit.text))
+	server_row.add_child(join_server)
 
 	var webrtc_ok := Net.webrtc_available()
 

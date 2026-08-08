@@ -64,6 +64,9 @@ move_right={
 
 signaling/url="wss://lobby.j6n.dev"
 signaling/ice_servers="[{\"urls\": [\"stun:stun.l.google.com:19302\"]}]"
+; Where clients dial the dedicated server. TLS terminates at the tunnel in front
+; of it, so the container itself speaks plain ws.
+game_server/url="wss://rogue-game.j6n.dev"
 
 [rendering]
 
