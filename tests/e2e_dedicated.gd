@@ -34,6 +34,9 @@ var _reported := {}
 var _dive_requested := false
 var _drill_armed := false
 var _choice_requested := false
+## The lead waits before calling, so the follower's refused attempt provably goes
+## first — otherwise a passing run would not prove the refusal happened at all.
+var _choice_after := 0.0
 
 
 func _ready() -> void:
@@ -175,19 +178,37 @@ func _check_choice(scene: Node) -> void:
 	# twice now, so the check belongs in every phase, not just the ones that hit it.
 	if scene.name != "Game":
 		return
-	_beat("choice drill: awaiting=%s depth=%d" % [scene.awaiting_choice, scene.depth])
+	if _choice_after == 0.0:
+		_choice_after = _elapsed + 6.0
+	_beat("choice drill: awaiting=%s depth=%d lead=%d" % [
+			scene.awaiting_choice, scene.depth, scene.leader_peer_id()])
 
 	if role == "server" and not _drill_armed:
 		_drill_armed = true
 		# Generous, or the server auto-extracts before a diver can answer.
 		scene.decision_left = 60.0
 		scene.awaiting_choice = true
-		print("[server] drill: awaiting_choice set, waiting for a DIVER to call it")
+		print("[server] drill: awaiting_choice set, waiting for the lead diver")
 		return
 
-	# A diver decides. On a dedicated server none of them is the authority, so this
-	# has to be a request — the exact thing that was broken.
-	if role == "lead" and scene.awaiting_choice and not _choice_requested:
+	# The FOLLOWER goes first, and must be ignored. It joined second, so it is not the
+	# lead diver — and the server authorises on sender identity rather than trusting
+	# that the button was hidden. Proving the refusal matters as much as proving the
+	# leader works: an implementation that accepted everyone would pass a
+	# leader-only test.
+	if role == "follower" and scene.awaiting_choice and not _choice_requested:
+		_choice_requested = true
+		print("[follower] attempting DESCEND (must be refused — not the lead diver)")
+		scene.request_choice.rpc_id(1, true)
+		return
+	if role == "follower" and _choice_requested and scene.depth > START_DEPTH:
+		_fail("a non-leader's call was honoured: depth reached %d" % scene.depth)
+		return
+
+	# Then the lead diver, who joined first, calls it for real. Delayed so the
+	# follower's rejected attempt has demonstrably landed first.
+	if role == "lead" and scene.awaiting_choice and not _choice_requested \
+			and _elapsed > _choice_after:
 		_choice_requested = true
 		print("[lead] requesting DESCEND")
 		scene.request_choice.rpc_id(1, true)

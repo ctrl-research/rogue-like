@@ -783,18 +783,47 @@ func _check_extraction(delta: float) -> void:
 		extraction_progress = 0.0
 
 
-## Any diver may call it at the bell.
+## The lead diver: the earliest-joined crew member still aboard.
+##
+## Peer ids are handed out in join order, so the lowest id among the spawned divers is
+## whoever joined first — and when they disconnect their player node goes with them, so
+## this silently becomes whoever joined next. No extra state to replicate and no
+## election to get wrong, and every peer computes the same answer locally.
+##
+## A dedicated server is id 1 but spawns no diver, so it is excluded by construction.
+## On a listen server the host IS a diver with id 1 and so leads, which is what it did
+## before any of this.
+func leader_peer_id() -> int:
+	var lead := 0
+	for p in players.get_children():
+		if p is Player and not p.is_queued_for_deletion():
+			if lead == 0 or p.peer_id < lead:
+				lead = p.peer_id
+	return lead
+
+
+## The lead diver's call at the bell.
 ##
 ## Was gated on multiplayer.is_server(), which with a dedicated server meant NOBODY
 ## could decide: no player is the server, so the choice never appeared for anyone, the
 ## timer ran out and the server auto-extracted the crew mid-run. Exactly the same
 ## mistake as the dive hatch, which was fixed and then not checked for siblings.
 ##
-## First press wins; awaiting_choice clears immediately, so a second request from
-## another diver is a no-op rather than a double descend.
+## Authorised here rather than only hidden in the HUD. Hiding a button is a UI
+## nicety; this is the check that actually holds, since any peer can call an any_peer
+## rpc whatever its own interface shows.
 @rpc("any_peer", "reliable")
 func request_choice(descend: bool) -> void:
 	if not multiplayer.is_server() or game_over or not awaiting_choice:
+		return
+	# 0 means the call came from this process — a listen-server host pressing its own
+	# button rather than an rpc arriving over the wire.
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	if sender != leader_peer_id():
+		push_warning("peer %d tried to call the bell but the lead diver is %d"
+				% [sender, leader_peer_id()])
 		return
 	if descend:
 		choose_descend()
