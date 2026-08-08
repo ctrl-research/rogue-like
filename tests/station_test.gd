@@ -244,6 +244,42 @@ func _ready() -> void:
 	_check(wardrobe != null and wardrobe.get_width() == 16 and wardrobe.get_height() == 16,
 			"the wardrobe sprite imports")
 
+	# Meta arriving from another peer. _rpc_notify_ready is any_peer, so on a public
+	# dedicated server this dict is attacker-controlled and it drives hp, speed,
+	# damage and the crew's shared oxygen tank.
+	var o2_max := int(Station.UPGRADES["o2"]["max"])
+	var cheated := Station.sanitize_meta({"o2": 999999, "hull": 500, "harpoon": -20})
+	_check(int(cheated["o2"]) == o2_max, "an inflated level clamps to the shop's max")
+	_check(int(cheated["hull"]) == int(Station.UPGRADES["hull"]["max"]),
+			"every upgrade track is clamped, not just o2")
+	_check(int(cheated["harpoon"]) == 0, "a negative level floors at zero")
+	# The important one is not cheating but crashing: int() on a Dictionary or Array
+	# is a runtime error, so an unchecked cast here would let a hostile client take
+	# the server down mid-handshake rather than merely give itself free upgrades.
+	var hostile := Station.sanitize_meta({"o2": {}, "hull": [], "fins": "lots", "lamp": null})
+	_check(int(hostile["o2"]) == 0 and int(hostile["hull"]) == 0
+			and int(hostile["fins"]) == 0 and int(hostile["lamp"]) == 0,
+			"non-numeric levels read as zero instead of erroring")
+	_check(Station.sanitize_meta("not a dict").has("o2"),
+			"a non-dict payload still yields a usable meta")
+	_check(str(Station.sanitize_meta({"diver": "not_a_diver"})["diver"]) == Divers.DEFAULT,
+			"an unknown diver class falls back")
+	_check(str(Station.sanitize_meta({"profile": {"suit": "#000000"}})["profile"]["suit"])
+			!= "#000000", "the profile is sanitized through the same path")
+	# Every declared upgrade must be present, or player.gd silently reads level 0 for
+	# a track someone actually bought.
+	for id in Station.UPGRADES:
+		_check(Station.sanitize_meta({}).has(id), "sanitized meta always carries %s" % id)
+
+	# Connection capacity. WebSocketMultiplayerPeer.create_server takes no client
+	# limit, unlike the ENet path, so this is the only thing bounding a flood.
+	_check(Net.max_clients() >= 1, "at least one client may connect")
+	_check(Net.max_clients() <= Net.MAX_PLAYERS, "never more clients than crew seats")
+	# A listen server is itself a diver and so takes one fewer client. is_dedicated()
+	# is false under the test runner, which is the listen-server case.
+	_check(Net.max_clients() == Net.MAX_PLAYERS - 1,
+			"a listen server leaves a seat for its own diver")
+
 	# Days: each dive turns the calendar, and it persists.
 	var day_before := Station.day
 	Station.advance_day()

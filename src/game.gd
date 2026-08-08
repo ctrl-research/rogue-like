@@ -541,7 +541,10 @@ func _spawn_projectile(data: Variant) -> Node:
 @rpc("any_peer", "reliable")
 func _rpc_notify_ready(meta: Dictionary) -> void:
 	if multiplayer.is_server():
-		_mark_ready(multiplayer.get_remote_sender_id(), meta)
+		# Clamped at the trust boundary: this is any_peer, so on a public server the
+		# dict is attacker-controlled and it drives hp, speed, damage and the crew's
+		# shared oxygen. See Station.sanitize_meta.
+		_mark_ready(multiplayer.get_remote_sender_id(), Station.sanitize_meta(meta))
 
 
 func _mark_ready(pid: int, meta: Dictionary) -> void:

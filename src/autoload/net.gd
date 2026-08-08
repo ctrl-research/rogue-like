@@ -47,10 +47,17 @@ var requested_depth := 1
 
 
 func _ready() -> void:
+	# Never decode objects off the wire. Godot 4 already defaults this to false, but
+	# it is the guard between a malicious packet and arbitrary object instantiation
+	# on a publicly reachable server, so it is stated rather than inherited. It must
+	# never be turned on.
+	if multiplayer is SceneMultiplayer:
+		(multiplayer as SceneMultiplayer).allow_object_decoding = false
 	add_child(_signaling)
 	_signaling.lobby_joined.connect(_on_lobby_joined)
 	_signaling.failed.connect(_on_signaling_failed)
-	multiplayer.peer_connected.connect(func(_id: int) -> void:
+	multiplayer.peer_connected.connect(func(id: int) -> void:
+		_enforce_capacity(id)
 		player_count_changed.emit()
 		_refresh_crew())
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
@@ -320,6 +327,31 @@ func _rpc_room_closed() -> void:
 func leave() -> void:
 	_reset_peer()
 	get_tree().change_scene_to_file(MENU_SCENE)
+
+
+## How many clients may be connected at once.
+##
+## A dedicated server holds no seat, so every client is a diver. A listen server is
+## itself a diver, so it can only take MAX_PLAYERS - 1 clients.
+func max_clients() -> int:
+	return MAX_PLAYERS - (0 if is_dedicated() else 1)
+
+
+## Server: drop a client that arrived over capacity.
+##
+## The ENet LAN path caps this in create_server(port, MAX_PLAYERS - 1), but
+## WebSocketMultiplayerPeer.create_server takes no such argument — so the publicly
+## reachable transport was the one with no limit at all, and MAX_PLAYERS was
+## otherwise only ever used to render "CREW 2/4". Without this, a trivial
+## connection flood gets seated in the roster, spawned and replicated.
+func _enforce_capacity(id: int) -> void:
+	if multiplayer.multiplayer_peer == null or not multiplayer.is_server():
+		return
+	if multiplayer.get_peers().size() <= max_clients():
+		return
+	push_warning("refusing peer %d: crew is full (%d clients)" % [id, max_clients()])
+	if multiplayer.multiplayer_peer.has_method("disconnect_peer"):
+		multiplayer.multiplayer_peer.disconnect_peer(id)
 
 
 ## Crew size as the server sees it, replicated to everyone.
