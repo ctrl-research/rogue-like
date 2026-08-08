@@ -31,4 +31,11 @@ EXPOSE 9100
 # --headless: no display. The `--` separates Godot's own args from the game's, and
 # Net.is_dedicated() also keys off the export preset's dedicated_server feature, so
 # --dedicated here is belt and braces for running the same binary interactively.
-ENTRYPOINT ["/bin/sh", "-c", "exec /app/abyssal-server --headless -- --dedicated --port \"$PORT\""]
+# stdbuf -oL -eL, because otherwise this container produces NO LOGS AT ALL.
+#
+# Godot writes through libc stdio, which block-buffers when stdout is a pipe rather
+# than a terminal — and in a container it is always a pipe. The engine banner, the
+# "listening on ws://..." line and whether a password is required all sat in a 4KB
+# buffer instead of reaching kubectl logs, so a perfectly healthy server was
+# indistinguishable from one that had silently failed to start.
+ENTRYPOINT ["/bin/sh", "-c", "exec stdbuf -oL -eL /app/abyssal-server --headless -- --dedicated --port \"$PORT\""]
