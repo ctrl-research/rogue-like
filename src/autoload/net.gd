@@ -197,7 +197,12 @@ func host_dedicated(port: int = SERVER_PORT) -> Error:
 	_refresh_crew()
 	# The server boards the sub too: sub.gd owns the roster and the dive hatch. It
 	# simply takes no seat of its own (see _my_seat / _keep_self_aboard there).
-	entered_lobby.emit("", true)
+	#
+	# Deferred, unlike the LAN paths. Those are only ever reached from a button
+	# press, but this is called straight out of _ready() on a dedicated server —
+	# and a handler that changes scene cannot run while the tree is still adding
+	# children ("Parent node is busy adding/removing children").
+	entered_lobby.emit.call_deferred("", true)
 	return OK
 
 
@@ -216,7 +221,7 @@ func join_server(url: String = "") -> Error:
 	mode = Mode.WEBSOCKET
 	is_online = true
 	status_changed.emit("Connecting to %s..." % target)
-	entered_lobby.emit("", false)
+	entered_lobby.emit.call_deferred("", false)  # see host_dedicated
 	return OK
 
 

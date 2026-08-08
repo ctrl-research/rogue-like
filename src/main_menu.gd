@@ -31,6 +31,11 @@ func _ready() -> void:
 	# It boards the sub (which owns the roster and the dive hatch) and waits.
 	if Net.is_dedicated():
 		print("[server] dedicated mode — starting without a title screen")
+		# Connect BEFORE hosting: entered_lobby is what boards the sub, and the sub
+		# owns the roster and the dive hatch. Returning before connecting left the
+		# server listening in an empty scene forever, with no way for a crew to
+		# assemble — it looked like a working server and was not one.
+		Net.entered_lobby.connect(_on_entered_lobby)
 		Net.host_dedicated(Net.dedicated_port())
 		return
 	Net.status_changed.connect(func(text: String) -> void: _status.text = text)
