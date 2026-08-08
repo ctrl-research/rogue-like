@@ -783,23 +783,15 @@ func _check_extraction(delta: float) -> void:
 		extraction_progress = 0.0
 
 
-## The lead diver: the earliest-joined crew member still aboard.
+## The lead diver, as tracked by Net from arrival order.
 ##
-## Peer ids are handed out in join order, so the lowest id among the spawned divers is
-## whoever joined first — and when they disconnect their player node goes with them, so
-## this silently becomes whoever joined next. No extra state to replicate and no
-## election to get wrong, and every peer computes the same answer locally.
-##
-## A dedicated server is id 1 but spawns no diver, so it is excluded by construction.
-## On a listen server the host IS a diver with id 1 and so leads, which is what it did
-## before any of this.
+## This used to take the lowest peer id among spawned divers, on the assumption that
+## ids count up in join order. They do under ENet, but WebSocketMultiplayerPeer hands
+## out RANDOM ids — CI produced 1184379706 — so the "leader" was whichever diver drew
+## the smallest number. The e2e caught it because it asserts a non-leader is refused
+## rather than only that the leader is allowed.
 func leader_peer_id() -> int:
-	var lead := 0
-	for p in players.get_children():
-		if p is Player and not p.is_queued_for_deletion():
-			if lead == 0 or p.peer_id < lead:
-				lead = p.peer_id
-	return lead
+	return Net.leader_id
 
 
 ## The lead diver's call at the bell.
