@@ -39,6 +39,13 @@ godot --path . --editor   # open the editor
   `SIGNALING_URL` env var, e.g. `ws://localhost:9080` with `node
   signaling/server.js` running). Desktop builds additionally need the
   webrtc-native extension: `scripts/fetch_webrtc.sh`.
+- **Dedicated server** — JOIN SERVER dials one address everyone shares
+  (`network/game_server/url`). Clients connect **outbound**, so it works from behind
+  CGNAT and mobile NAT with no relay. Run one with `--dedicated` (or the `Server`
+  export preset, which sets the feature tag): `PORT` chooses the port and
+  **`JOIN_PASSWORD` sets a join password — empty means an open server**. One lobby
+  per process.
+
 - **Direct connect (desktop)** — HOST LAN / JOIN LAN, ENet on UDP 7777, no
   signalling hub and no relay involved. Works on a LAN as-is; over the internet
   the host forwards UDP 7777 and shares their public address. **Only the host
