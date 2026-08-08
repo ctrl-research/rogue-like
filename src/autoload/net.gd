@@ -319,6 +319,44 @@ func start_dive() -> void:
 
 ## Host only: bring the whole crew back to the lobby after a run. The room
 ## stays open (and reopens to new joiners) until the host disbands it.
+## The lead diver's calls at the end of a run: bring the crew back, or disband.
+##
+## The third place gated on is_server() that should not have been. With a dedicated
+## server nobody was the server, so once a run ended NO player could return the crew
+## to the sub or close the room — the whole crew sat on the game-over screen with only
+## "waiting" and "leave". Found by auditing the remaining is_server() gates after the
+## dive hatch and the bell decision turned out to be the same mistake twice.
+##
+## Authorised on the server by sender identity, like the bell call: hiding a button is
+## presentation, not enforcement.
+@rpc("any_peer", "reliable")
+func request_return_to_lobby() -> void:
+	if _leader_requested():
+		return_to_lobby()
+
+
+@rpc("any_peer", "reliable")
+func request_disband() -> void:
+	if _leader_requested():
+		close_room()
+
+
+## True when the caller is the lead diver. A sender id of 0 means the call came from
+## this process rather than over the wire — a listen-server host pressing its own
+## button.
+func _leader_requested() -> bool:
+	if not multiplayer.is_server():
+		return false
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	if sender != leader_id:
+		push_warning("peer %d asked to end the run but the lead diver is %d"
+				% [sender, leader_id])
+		return false
+	return true
+
+
 func return_to_lobby() -> void:
 	if not multiplayer.is_server():
 		return

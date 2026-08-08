@@ -130,11 +130,15 @@ func _process(_delta: float) -> void:
 		# Role-aware prompts: the host owns the room's fate; the crew stays
 		# together unless a member chooses to walk.
 		var online := Net.is_online
+		# The LEAD diver owns the room's fate, not "the server" — with a dedicated
+		# server no player is the server, so this used to leave the entire crew
+		# stranded on this screen with nothing but "waiting" and "leave".
+		var leads: bool = Net.leader_id == multiplayer.get_unique_id()
 		_over_station_btn.visible = not online
-		_over_lobby_btn.visible = online and multiplayer.is_server()
-		_over_disband_btn.visible = online and multiplayer.is_server()
-		_over_wait.visible = online and not multiplayer.is_server()
-		_over_leave_btn.visible = online and not multiplayer.is_server()
+		_over_lobby_btn.visible = online and leads
+		_over_disband_btn.visible = online and leads
+		_over_wait.visible = online and not leads
+		_over_leave_btn.visible = online and not leads
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -536,11 +540,19 @@ func _build() -> void:
 	box.add_child(_over_station_btn)
 	_over_lobby_btn = Button.new()
 	_over_lobby_btn.text = "BACK TO LOBBY — DIVE AGAIN"
-	_over_lobby_btn.pressed.connect(func() -> void: Net.return_to_lobby())
+	_over_lobby_btn.pressed.connect(func() -> void:
+		if multiplayer.is_server():
+			Net.return_to_lobby()
+		else:
+			Net.request_return_to_lobby.rpc_id(1))
 	box.add_child(_over_lobby_btn)
 	_over_disband_btn = Button.new()
 	_over_disband_btn.text = "DISBAND CREW"
-	_over_disband_btn.pressed.connect(func() -> void: Net.close_room())
+	_over_disband_btn.pressed.connect(func() -> void:
+		if multiplayer.is_server():
+			Net.close_room()
+		else:
+			Net.request_disband.rpc_id(1))
 	box.add_child(_over_disband_btn)
 	_over_wait = _label("the lead diver is deciding the crew's next move...", 8)
 	_over_wait.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

@@ -280,6 +280,16 @@ terrain are untouched by it.
   and no relay at all. Desktop also keeps online room codes, since the WebRTC
   extension ships a macOS universal framework and a Windows x86_64 dll.
 
+- **M14 — this PR** — the bell's breathing room. Once the diving bell is down, a
+  radius around it is safe: monsters cannot enter (and any caught inside when it lands
+  are shoved out rather than killed, since something invulnerable and harmless parked
+  in the middle of the pause is worse than a shove), divers inside cannot be hurt and
+  cannot shoot, and having stepped in they stay until the crew moves on. Marked with a
+  pulsing dashed ring drawn from the same constant the movement clamp and the damage
+  check use, so the ring cannot lie about where safety ends. Deliberately a pause and
+  not a turret post: guns down inside, because monsters cannot come in and shooting out
+  would be free damage.
+
 ## Backlog (post-M6)
 
 ### Content

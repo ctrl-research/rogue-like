@@ -192,6 +192,25 @@ func _server_tick(delta: float) -> void:
 			velocity = Vector2.ZERO
 			return
 	var dir := (target.global_position - global_position).normalized()
+	# The bell's safe zone is closed to monsters. One check on the single movement
+	# path every enemy type funnels through, rather than per-behaviour.
+	if game != null:
+		var centre: Variant = game.bell_safe_center()
+		if centre != null:
+			var to_centre: Vector2 = (centre as Vector2) - global_position
+			var dist := to_centre.length()
+			if dist <= GameRules.BELL_SAFE_RADIUS:
+				# Caught inside when the bell landed: shoved out rather than killed,
+				# because something invulnerable and harmless parked in the middle of
+				# the crew's breathing room is worse than a brief shove.
+				velocity = -to_centre.normalized() * GameRules.BELL_PUSH_SPEED
+				move_and_slide()
+				return
+			# Heading in: slide along the edge instead of pushing through it.
+			if dist - GameRules.BELL_SAFE_RADIUS < speed * delta and dir.dot(to_centre) > 0.0:
+				velocity = dir.orthogonal() * speed
+				move_and_slide()
+				return
 	velocity = dir * speed
 	move_and_slide()
 	_chew_rock(dir, delta)
