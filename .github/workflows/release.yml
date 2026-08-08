@@ -246,7 +246,12 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          # The directory holding the exported binary, NOT the repo root: the
+          # Dockerfile does `COPY abyssal-server`, so the binary has to be at the
+          # context root. With context "." the build failed with
+          # `"/abyssal-server": not found`. This also keeps the context to one file
+          # instead of shipping the whole repo to the builder.
+          context: build/server
           file: server/Dockerfile
           platforms: linux/amd64
           push: ${{ needs.version.outputs.publish == 'true' }}

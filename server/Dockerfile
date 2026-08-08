@@ -10,7 +10,14 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Unprivileged: this listens on the internet, and it needs nothing root can do.
-RUN useradd --system --create-home --uid 10001 abyssal
+#
+# The GID is pinned as well as the UID. --uid alone leaves the group
+# auto-assigned (it came out as 999), which then disagrees with the
+# runAsGroup/fsGroup the Kubernetes manifest declares — and fsGroup is what makes
+# the mounted HOME writable. Matching them removes the discrepancy rather than
+# relying on it not mattering.
+RUN groupadd --system --gid 10001 abyssal \
+ && useradd --system --create-home --uid 10001 --gid 10001 abyssal
 WORKDIR /app
 COPY --chown=abyssal:abyssal abyssal-server /app/abyssal-server
 RUN chmod +x /app/abyssal-server
