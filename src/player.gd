@@ -116,7 +116,10 @@ func _physics_process(delta: float) -> void:
 		if not downed:
 			var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 			velocity = input * move_speed * (GameRules.TOW_SPEED_SCALE if towing else 1.0)
-			var was_safe := game.in_bell_safety(global_position)
+			# Explicit bool: `game` is untyped here (to avoid a class cycle), so
+			# anything reached through it is Variant and `:=` cannot infer — which
+			# fails the whole script's parse, not just this line.
+			var was_safe: bool = game.in_bell_safety(global_position)
 			move_and_slide()
 			# Once you are in the bell's breathing room you stay until the crew moves
 			# on. Clamped on the owning client because movement is client-authoritative
