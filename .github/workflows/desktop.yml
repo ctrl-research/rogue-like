@@ -112,21 +112,45 @@ jobs:
 
       # Sanity-check the artifacts rather than trusting a zero exit: an export
       # that silently produced a stub would still pass `test -s`.
+      # Zip Windows, rather than shipping a bare exe.
+      #
+      # GDExtension libraries cannot live inside a .pck — they have to be real files
+      # on disk — so the Windows export drops libwebrtc_native...dll beside the exe
+      # even with embed_pck=true. v0.1.117 published that dll as a SEPARATE release
+      # asset, so anyone who downloaded only the exe got a build whose online play
+      # could not initialise. The macOS .app carries its framework internally, which
+      # is why only Windows needs this.
+      - name: Package Windows
+        run: |
+          set -euo pipefail
+          cd build/desktop
+          # Everything the exe needs travels with it. -j so the archive has no
+          # directory prefix and the dll lands beside the exe on extract.
+          zip -qj AbyssalSalvage-windows.zip AbyssalSalvage-windows.exe *.dll 2>/dev/null \
+            || zip -qj AbyssalSalvage-windows.zip AbyssalSalvage-windows.exe
+          rm -f AbyssalSalvage-windows.exe *.dll
+          ls -lh
+
       - name: Inspect artifacts
         run: |
           set -euo pipefail
           ls -lh build/desktop/
           mac_bytes=$(stat -c%s build/desktop/AbyssalSalvage-macos.zip)
-          win_bytes=$(stat -c%s build/desktop/AbyssalSalvage-windows.exe)
-          echo "macos zip: $mac_bytes bytes, windows exe: $win_bytes bytes"
+          win_bytes=$(stat -c%s build/desktop/AbyssalSalvage-windows.zip)
+          echo "macos zip: $mac_bytes bytes, windows zip: $win_bytes bytes"
           # Both should be tens of MB; a few hundred KB means the template or the
           # pck did not make it in.
           test "$mac_bytes" -gt 10000000 || { echo "::error::macOS zip is implausibly small"; exit 1; }
-          test "$win_bytes" -gt 10000000 || { echo "::error::Windows exe is implausibly small"; exit 1; }
-          # The .app must carry the WebRTC framework, or online play is gone and
-          # only LAN works — the exact silent downgrade this workflow guards.
+          test "$win_bytes" -gt 10000000 || { echo "::error::Windows zip is implausibly small"; exit 1; }
+          # Each build must carry the WebRTC extension, or online play is silently
+          # gone and only LAN works — the exact downgrade this workflow guards. The
+          # Windows check is what v0.1.117 needed and did not have.
           unzip -l build/desktop/AbyssalSalvage-macos.zip | grep -q "webrtc_native" \
             || { echo "::error::macOS build has no webrtc-native; online play would be dead"; exit 1; }
+          unzip -l build/desktop/AbyssalSalvage-windows.zip | grep -q "AbyssalSalvage-windows.exe" \
+            || { echo "::error::Windows zip has no executable"; exit 1; }
+          unzip -l build/desktop/AbyssalSalvage-windows.zip | grep -qi "webrtc_native.*\.dll" \
+            || { echo "::error::Windows zip has no webrtc dll beside the exe"; exit 1; }
           echo "artifacts look sane"
 
       - name: Upload desktop builds
