@@ -129,6 +129,22 @@ jobs:
           test -s /tmp/server-check/abyssal-server
           ls -lh /tmp/server-check/
 
+      # Build the image too, without pushing.
+      #
+      # The previous fix validated the EXPORT and stopped there, so the Dockerfile
+      # stayed unexercised on PRs — and the next release failed on it instead, with
+      # `COPY abyssal-server` unable to find a binary that the release job had put in
+      # a different directory. Exporting a binary nobody containerises proves half
+      # the job. Context is the export directory because the Dockerfile copies from
+      # the context root.
+      - name: Validate the server image build
+        run: |
+          set -euo pipefail
+          docker build -t abyssal-server:ci -f server/Dockerfile /tmp/server-check
+          # Prove the binary actually landed where the container will look for it.
+          docker run --rm --entrypoint /bin/sh abyssal-server:ci \
+            -c 'test -x /app/abyssal-server && echo "binary present and executable"'
+
       - name: Export Web build
         run: |
           set -euo pipefail
