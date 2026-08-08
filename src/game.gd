@@ -108,7 +108,11 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		terrain.ore_mined.connect(_on_ore_mined)
 		multiplayer.peer_disconnected.connect(_on_peer_left)
-		_mark_ready(1, Station.meta_dict())
+		# A dedicated server contributes no diver and has no Station, so it must not
+		# mark itself ready — doing so would spawn a phantom player and pool a
+		# non-existent diver's upgrades into the shared oxygen tank.
+		if not Net.is_dedicated():
+			_mark_ready(1, Station.meta_dict())
 	else:
 		_rpc_notify_ready.rpc_id(1, Station.meta_dict())
 
@@ -341,6 +345,8 @@ func on_warden_killed(pos: Vector2) -> void:
 ## next winch-refit checkpoint between dives.
 @rpc("authority", "call_local", "reliable")
 func _rpc_record_lair(lair_depth: int) -> void:
+	if Net.is_dedicated():
+		return  # no progression of its own to record
 	Station.record_lair_cleared(lair_depth)
 
 
@@ -543,9 +549,20 @@ func _mark_ready(pid: int, meta: Dictionary) -> void:
 	_metas[pid] = meta
 	if _started:
 		return
-	var expected: Array[int] = [1]
+	# Who the dive is waiting on, and who gets a diver spawned — the same list.
+	#
+	# A dedicated server is neither. It never marks itself ready (see _ready), so
+	# including peer 1 unconditionally meant waiting forever for a report that would
+	# never arrive: the crew reached the arena and nobody ever spawned. Had the gate
+	# passed, _start_run would then have spawned a body for the server and pooled a
+	# non-existent diver's O2 upgrades into the shared tank.
+	var expected: Array[int] = []
+	if not Net.is_dedicated():
+		expected.append(1)
 	for p in multiplayer.get_peers():
 		expected.append(p)
+	if expected.is_empty():
+		return  # a dedicated server with no divers aboard: nothing to start
 	for p in expected:
 		if not _ready_peers.has(p):
 			return
@@ -562,8 +579,9 @@ func _start_run(pids: Array[int]) -> void:
 	_max_oxygen = GameRules.OXYGEN_TIME + o2_bonus
 	oxygen = _max_oxygen
 
-	# The host's winch sets the crew's start depth — bought progress.
-	depth = maxi(1, Station.dive_depth)
+	# The depth the diver who started the dive asked for. Was the host's own
+	# Station.dive_depth, which a dedicated server does not have.
+	depth = maxi(1, Net.requested_depth)
 	if depth > 1:
 		_rpc_toast.rpc("The winch lowers the crew straight to depth %d." % depth)
 
@@ -922,8 +940,12 @@ func _rpc_game_over(win: bool, banked: int) -> void:
 	victory = win
 	banked_salvage = banked
 	awaiting_choice = false
-	# Each dive is a day: every diver's calendar turns when the run ends.
-	Station.advance_day()
-	if win:
-		# Every diver banks the full team haul into their own station.
-		Station.bank_salvage(banked)
+	# Progression is client-owned: this rpc is authority/call_local, so every diver
+	# banks the team haul into their OWN station. A dedicated server has no
+	# progression to keep, and letting it run this would write a save file inside
+	# the container for a diver that does not exist.
+	if not Net.is_dedicated():
+		# Each dive is a day: every diver's calendar turns when the run ends.
+		Station.advance_day()
+		if win:
+			Station.bank_salvage(banked)
