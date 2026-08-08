@@ -549,9 +549,20 @@ func _mark_ready(pid: int, meta: Dictionary) -> void:
 	_metas[pid] = meta
 	if _started:
 		return
-	var expected: Array[int] = [1]
+	# Who the dive is waiting on, and who gets a diver spawned — the same list.
+	#
+	# A dedicated server is neither. It never marks itself ready (see _ready), so
+	# including peer 1 unconditionally meant waiting forever for a report that would
+	# never arrive: the crew reached the arena and nobody ever spawned. Had the gate
+	# passed, _start_run would then have spawned a body for the server and pooled a
+	# non-existent diver's O2 upgrades into the shared tank.
+	var expected: Array[int] = []
+	if not Net.is_dedicated():
+		expected.append(1)
 	for p in multiplayer.get_peers():
 		expected.append(p)
+	if expected.is_empty():
+		return  # a dedicated server with no divers aboard: nothing to start
 	for p in expected:
 		if not _ready_peers.has(p):
 			return
