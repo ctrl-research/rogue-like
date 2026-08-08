@@ -131,12 +131,17 @@ func _check_dive(scene: Node) -> void:
 	# Two divers spawned, not three: the server must not have marked itself ready.
 	if players != 2:
 		return
+	# Every role waits for the same evidence: two divers AND a live wave. The server
+	# used to finish on players alone, so it quit a second later and tore down the
+	# session before any enemy existed — leaving both clients waiting forever for a
+	# wave that could never come. A server that exits first ends the test for
+	# everyone, so its bar has to be at least as high as theirs.
+	if enemies < 1:
+		return
 	if role == "server":
-		_once("E2E_SERVER_OK", "2 players spawned, none of them the server")
+		_once("E2E_SERVER_OK", "2 players spawned and %d enemies live" % enemies)
 	else:
-		if enemies < 1:
-			return  # wait for the first wave, which proves replication
-		_once("E2E_%s_OK" % role.to_upper(), "2 players and enemies replicated")
+		_once("E2E_%s_OK" % role.to_upper(), "2 players and %d enemies replicated" % enemies)
 
 
 func _once(marker: String, detail: String) -> void:
