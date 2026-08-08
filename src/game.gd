@@ -783,6 +783,26 @@ func _check_extraction(delta: float) -> void:
 		extraction_progress = 0.0
 
 
+## Any diver may call it at the bell.
+##
+## Was gated on multiplayer.is_server(), which with a dedicated server meant NOBODY
+## could decide: no player is the server, so the choice never appeared for anyone, the
+## timer ran out and the server auto-extracted the crew mid-run. Exactly the same
+## mistake as the dive hatch, which was fixed and then not checked for siblings.
+##
+## First press wins; awaiting_choice clears immediately, so a second request from
+## another diver is a no-op rather than a double descend.
+@rpc("any_peer", "reliable")
+func request_choice(descend: bool) -> void:
+	if not multiplayer.is_server() or game_over or not awaiting_choice:
+		return
+	if descend:
+		choose_descend()
+	else:
+		choose_extract()
+
+
+
 ## Server (host UI): bank the haul and end the run.
 func choose_extract() -> void:
 	if not multiplayer.is_server() or game_over:

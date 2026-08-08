@@ -82,6 +82,11 @@ need "E2E_FOLLOWER_LOBBY_OK" follower
 need "E2E_FOLLOWER_OK"       follower
 # The security-critical assertion: a wrong password does not get in.
 need "E2E_INTRUDER_REFUSED"  intruder
+# The bell decision must be reachable by a DIVER. Gated on is_server() it appeared
+# for nobody on a dedicated server and the run auto-extracted itself.
+need "E2E_SERVER_CHOICE_OK"   server
+need "E2E_LEAD_CHOICE_OK"     lead
+need "E2E_FOLLOWER_CHOICE_OK" follower
 # And it must never have been seated. Godot drops an unauthenticated peer before it
 # counts as connected, so this greps for any sign it got further than the door.
 if grep -qE "E2E_INTRUDER_(LOBBY_)?OK" "$OUT_DIR/intruder.log" 2>/dev/null; then
