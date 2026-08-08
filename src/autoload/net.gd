@@ -43,6 +43,13 @@ var _signaling := SignalingClient.new()
 ## only the server, so a derived count would report 2 divers however many are
 ## aboard — and this number sets enemy counts and HP scaling in game.gd.
 var _crew := 1
+## The lead diver, replicated from the server. Join order is TRACKED rather than
+## inferred from peer ids: WebSocketMultiplayerPeer hands out random ids (a real
+## one seen in CI was 1184379706), unlike ENet which counts up from 2. Ordering by
+## id therefore made whichever diver happened to draw the lowest number the leader,
+## which had nothing to do with who arrived first.
+var leader_id := 0
+var _join_order: Array[int] = []
 ## Depth the dive was requested at. With a dedicated server no player is the
 ## server, so the diver who starts the dive sends their own winch depth and the
 ## server runs with it — see request_dive.
@@ -66,6 +73,7 @@ func _ready() -> void:
 	_signaling.lobby_joined.connect(_on_lobby_joined)
 	_signaling.failed.connect(_on_signaling_failed)
 	multiplayer.peer_connected.connect(func(id: int) -> void:
+		_note_join(id)
 		_enforce_capacity(id)
 		player_count_changed.emit()
 		_refresh_crew())
@@ -153,6 +161,9 @@ func join_online(code: String) -> void:
 func _on_lobby_joined(_peer_id: int, room: String, is_host: bool) -> void:
 	multiplayer.multiplayer_peer = _signaling.rtc
 	mode = Mode.WEBRTC
+	# Shared by host and joiner; _note_join no-ops unless this peer is the server, so
+	# only a hosting player records itself as the first arrival.
+	_note_join(multiplayer.get_unique_id())
 	is_online = true
 	room_code = room
 	if is_host:
@@ -181,6 +192,8 @@ func host_lan() -> Error:
 		return err
 	multiplayer.multiplayer_peer = peer
 	mode = Mode.ENET
+	# A listen-server host is a diver, and the first one aboard.
+	_note_join(multiplayer.get_unique_id())
 	is_online = true
 	status_changed.emit("Hosting on port %d — waiting for divers..." % DEFAULT_PORT)
 	entered_lobby.emit("", true)
@@ -225,6 +238,8 @@ func host_dedicated(port: int = SERVER_PORT) -> Error:
 	mode = Mode.WEBSOCKET
 	is_online = true
 	_arm_auth_server(server_password())
+	# No seed: a dedicated server spawns no diver, so it can never lead.
+	_refresh_leader()
 	print("[server] listening on ws://0.0.0.0:%d — one lobby, up to %d divers, %s"
 			% [port, MAX_PLAYERS, "password required"
 			if not server_password().is_empty() else "OPEN (no password)"])
@@ -453,6 +468,37 @@ func player_count() -> int:
 	return _crew
 
 
+## Server: remember arrival order, which is the only thing that survives random
+## peer ids.
+func _note_join(id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	if not _join_order.has(id):
+		_join_order.append(id)
+	_refresh_leader()
+
+
+## Server: the earliest arrival still aboard leads. When they leave, the next one
+## does — which is exactly "whoever joined next" without an election.
+func _refresh_leader() -> void:
+	if multiplayer.multiplayer_peer == null or not multiplayer.is_server():
+		return
+	var mine := multiplayer.get_unique_id()
+	var peers := multiplayer.get_peers()
+	var next := 0
+	for id in _join_order:
+		if id == mine or peers.has(id):
+			next = id
+			break
+	_rpc_leader.rpc(next)
+
+
+@rpc("authority", "call_local", "reliable")
+func _rpc_leader(id: int) -> void:
+	leader_id = id
+
+
+
 ## Server: recount and tell the crew. A dedicated server excludes itself — it has
 ## no diver, and counting it would scale the trench's difficulty for a player who
 ## does not exist.
@@ -530,6 +576,8 @@ func _reset_peer() -> void:
 	# Solo is a crew of one; leaving a stale count here would scale the next
 	# session's difficulty from the last one's crew.
 	_crew = 1
+	leader_id = 0
+	_join_order.clear()
 
 
 func _on_connected_to_server() -> void:
@@ -543,6 +591,8 @@ func _on_connection_failed() -> void:
 
 
 func _on_peer_disconnected(id: int) -> void:
+	_join_order.erase(id)
+	_refresh_leader()
 	player_count_changed.emit()
 	_refresh_crew()
 	# In a WebRTC mesh there is no server_disconnected signal — detect the
