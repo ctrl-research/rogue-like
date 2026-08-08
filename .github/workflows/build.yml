@@ -113,6 +113,22 @@ jobs:
           fi
           GODOT=./godot bash scripts/e2e_webrtc.sh
 
+      # Export the dedicated server on every PR, purely to validate the preset.
+      #
+      # This failure reached main because nothing before a merge ever exercised it:
+      # release.yml owns the Server export and only runs on main, and desktop.yml is
+      # release-only too. So "A texture format must be selected" surfaced as a failed
+      # release rather than a failed check. The binary is thrown away — this is here
+      # to make preset breakage a PR problem.
+      - name: Validate the dedicated server export
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/server-check
+          ./godot --headless --path . --export-release "Server" \
+            /tmp/server-check/abyssal-server 2>&1 | tee -a build.log
+          test -s /tmp/server-check/abyssal-server
+          ls -lh /tmp/server-check/
+
       - name: Export Web build
         run: |
           set -euo pipefail
